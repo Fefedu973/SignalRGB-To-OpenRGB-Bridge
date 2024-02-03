@@ -1,0 +1,2 @@
+# SignalRGB-To-OpenRGB-Bridge
+An add on for signalRGB that allows to control OpenRGB Devices
