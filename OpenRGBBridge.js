@@ -1,4 +1,4 @@
-//import Client from "./openrgb.js";
+import Client from "./openrgb.js";
 
 export function Name() { return "OpenRGB Bridge"; }
 export function Version() { return "1.1.0"; }
