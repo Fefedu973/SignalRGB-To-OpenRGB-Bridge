@@ -20,7 +20,7 @@ Item {
           x: 10
           y: 10
           height: 80              
-          source: "https://openrgb.org/OpenRGB%20White.d0101f04.webp"
+          source: "https://marketplace.signalrgb.com/brands/products/cololight/logo.png"
           fillMode: Image.PreserveAspectFit
           antialiasing: true
           mipmap:true
