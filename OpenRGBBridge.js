@@ -1,4 +1,4 @@
-import { Client } from "./openrgb-sdk";
+import client from "./openrgb.js";
 
 export function Name() { return "OpenRGB Bridge"; }
 export function Version() { return "1.1.0"; }
@@ -24,9 +24,11 @@ export function Shutdown() {
 // -------------------------------------------<( Discovery Service )>--------------------------------------------------
 
 
-export function DiscoveryService() {
-	this.connect = function() {
+export async function DiscoveryService() {
+	this.connect = async function() {
 		service.log("Connecting to OpenRGB");
+		const client = new Client("Example", 6742, "localhost")
+		await client.connect();
 	}
 }
 
