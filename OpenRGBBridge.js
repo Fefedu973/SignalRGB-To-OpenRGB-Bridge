@@ -24,7 +24,7 @@ export function Shutdown() {
 
 export function DiscoveryService() {
 	this.connect = function() {
-		console.log("Connecting to OpenRGB");
+		service.log("Connecting to OpenRGB");
 	}
 }
 
