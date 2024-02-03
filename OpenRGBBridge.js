@@ -1,10 +1,10 @@
-export function Name() { return ""; }
-export function VendorId() { return ; }
-export function ProductId() { return ; }
-export function Publisher() { return ""; }
-export function Size() { return [1,1]; }
-export function DefaultPosition(){return [10, 100]; }
-export function DefaultScale(){return 8.0}
+export function Name() { return "Govee Direct Connect"; }
+export function Version() { return "1.2.0"; }
+export function Type() { return "network"; }
+export function Publisher() { return "RickOfficial"; }
+export function Size() { return [1, 1]; }
+export function DefaultPosition() {return [0, 70]; }
+export function DefaultScale(){return 1.0;}
 export function ControllableParameters() {
 	return [
 		{"property":"shutdownColor", "group":"lighting", "label":"Shutdown Color", "min":"0", "max":"360", "type":"color", "default":"009bde"},
