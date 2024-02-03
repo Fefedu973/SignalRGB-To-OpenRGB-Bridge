@@ -1,4 +1,3 @@
-import * as client from "./node_modules/openrgb-sdk/src/client.js";
 export function Name() { return "OpenRGB Bridge"; }
 export function Version() { return "1.1.0"; }
 export function Type() { return "network"; }
@@ -26,7 +25,6 @@ export function Shutdown() {
 export function DiscoveryService() {
 	this.connect = function() {
 		service.log("Connecting to OpenRGB");
-		client.connect("localhost", 6742);
 	}
 }
 
