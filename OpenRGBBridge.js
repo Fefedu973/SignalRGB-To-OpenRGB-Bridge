@@ -1,5 +1,3 @@
-const { Client } = require("openrgb-sdk")
-
 export function Name() { return "OpenRGB Bridge"; }
 export function Version() { return "1.1.0"; }
 export function Type() { return "network"; }
