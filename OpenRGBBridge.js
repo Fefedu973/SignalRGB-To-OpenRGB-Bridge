@@ -18,12 +18,14 @@ export function Render() {
 }
 
 export function Shutdown() {
-	CloseDtlsSocket();
 }
 // -------------------------------------------<( Discovery Service )>--------------------------------------------------
 
 
 export function DiscoveryService() {
+	this.connect = function() {
+		console.log("Connecting to OpenRGB");
+	}
 }
 
 export function Image(){
