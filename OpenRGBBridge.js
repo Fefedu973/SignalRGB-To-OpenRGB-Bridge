@@ -23,11 +23,9 @@ export function Shutdown() {
 }
 
 
-export async function DiscoveryService() {
-	this.connect = async function() {
+export function DiscoveryService() {
+	this.connect = function() {
 		service.log("Connecting to OpenRGB");
-		const client = new Client("Example", 6742, "localhost")
-		await client.connect();
 	}
 }
 
