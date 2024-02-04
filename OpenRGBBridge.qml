@@ -225,9 +225,11 @@ Item {
 								if (parent.color == "#212d3a") {
 									parent.color = "#ff0000";
 									discovery.selectedDevices.push(modelData);
+									discovery.updateDevices();
 								} else {
 									parent.color = "#212d3a";
 									discovery.selectedDevices.splice(discovery.selectedDevices.indexOf(modelData), 1);
+									discovery.updateDevices();
 								
 							}
 							}
