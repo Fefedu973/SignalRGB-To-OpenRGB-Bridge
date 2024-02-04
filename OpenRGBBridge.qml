@@ -26,6 +26,16 @@ Item {
 			width: parent.width
 			wrapMode: Text.WordWrap
 		}
+		        Text {
+			color: theme.primarytextcolor
+			text: "You also need to install node.js and run the node server using the following command: node server.js. This is temporary and will be replaced by a more user-friendly solution in the future."
+			font.pixelSize: 13
+			font.family: "Poppins"
+			font.bold: false
+			bottomPadding: 10
+			width: parent.width
+			wrapMode: Text.WordWrap
+		}
 		Row {
 			spacing: 5
 			
@@ -129,11 +139,106 @@ Item {
 					icon.source: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAV0lEQVQ4jWP8//8/A0UAnwH///3r+P/vXwdevQQMuPv/37+7+AxgItaluMAwMIARGpIdDAwMoVjklaD0PSxyqxkYGSsodsFoNFLBABYC8qsJGcBIaXYGAFjoNxCMz3axAAAAAElFTkSuQmCC"
 					text: "Connect"
 					anchors.right: parent.center
-					onClicked: {
+            onClicked: {
+				deviceListLoader.active = false;
+				discovery.deviceList = [];
+
+                const xhr = new XMLHttpRequest();
+
+				const host = discoverIP.text;
+				const port = ledCount.text;
+
+                xhr.open("GET", `http://localhost:9730/getDeviceList?host=${host}&port=${port}`, true);
+
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState === 4 && xhr.status === 200) {
+						service.log(xhr.responseText);
+						if (xhr.responseText != "[]") {
+                        // Handle the response containing device data
+
+                        // Dynamically create rectangles for each device
+                        discovery.deviceList = JSON.parse(xhr.responseText);
+                        
+                        // Activate the Loader when the device list is available
+                        deviceListLoader.active = true;
 						discovery.connect();
-					}
-				}
-			}
+						}
+                    }
+                };
+
+                xhr.send();
+            }
+        }
+    }
 		}
-	}
-}
+    // Loader for dynamically loading the device list component
+
+	// Define the Loader for the device list
+
+    // Loader for dynamically loading the device list component
+    Loader {
+        id: deviceListLoader
+
+        // Define the component directly in the Loader
+        sourceComponent: Component {
+            Column {
+                width: 200
+				spacing: 5
+				topPadding: 10
+
+				//text
+				Text {
+					color: theme.primarytextcolor
+					text: "Select the devices you want to control"
+					font.pixelSize: 16
+					font.family: "Poppins"
+					font.bold: false
+					bottomPadding: 10
+					width: 400
+					wrapMode: Text.WordWrap
+				}
+
+                Repeater {
+                    model: discovery.deviceList // Assuming deviceList is a property in the DiscoveryService
+					id: deviceRepeater
+
+                    Rectangle {
+                        width: 500
+                        height: 30 // Set an appropriate height for each device rectangle
+                        color: "#212d3a" // Set the background color for each device rectangle
+                        radius: 2
+
+                        Text {
+                            anchors.centerIn: parent
+                            color: "white"
+                            text: modelData.name // Assuming 'name' is a property in your device object
+                            font.pixelSize: 16
+                            font.family: "Poppins"
+                            font.bold: true
+                        }
+
+						MouseArea {
+							anchors.fill: parent
+							onClicked: {
+								// Handle the click event for the device
+								//make the rectangle background color change red
+								if (parent.color == "#212d3a") {
+									parent.color = "#ff0000";
+									discovery.selectedDevices.push(modelData);
+								} else {
+									parent.color = "#212d3a";
+									discovery.selectedDevices.splice(discovery.selectedDevices.indexOf(modelData), 1);
+								
+							}
+							}
+						}
+                    }
+                }
+            }
+        }
+
+        // Load the component only when the device list is available
+        active: false
+    }
+
+	}}

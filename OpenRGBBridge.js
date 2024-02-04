@@ -1,5 +1,3 @@
-import Client from "./openrgb.js";
-
 export function Name() { return "OpenRGB Bridge"; }
 export function Version() { return "1.1.0"; }
 export function Type() { return "network"; }
@@ -21,14 +19,30 @@ export function Render() {
 
 export function Shutdown() {
 }
+  
+  export function Image() {
+	return "";
+  }
 
+// ... (Your existing code)
 
 export function DiscoveryService() {
-	this.connect = function() {
-		service.log("Connecting to OpenRGB");
-	}
-}
 
-export function Image(){
-	return "";
-}
+
+    this.deviceList = [];
+	this.valid = false;
+	
+	// Private variables
+	let serverURL = "http://localhost:9730"; // Replace with your Node.js server URL
+  
+	// Public methods
+	this.connect = function () {
+		service.log(discovery.deviceList.length);
+	};
+
+  
+	this.Update = function () {
+	  // Implement Update logic if needed
+	};
+  }
+  
