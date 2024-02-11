@@ -41,7 +41,7 @@ export function Shutdown() {
 	protocol.setColors(color[0], color[1], color[2]);
 	device.pause(5000);
 }
-}
+
 
 export function DiscoveryService() {
 
