@@ -409,11 +409,12 @@ Column {
                         for (var i = 0; i < selectedDevices.length; i++) {
                             if (selectedDevices[i].deviceId === modelData.deviceId)
                             {
+                                let deviceIdToRemove = modelData.deviceId
                                 parent.color = "#212d3a";
                                 selectedDevices.splice(i, 1);
                                 service.saveSetting("General", "SelectedDevices", JSON.stringify(selectedDevices))
 
-                                discovery.updateDevices(selectedDevices);
+                                discovery.removedDevices(deviceIdToRemove);
                                 return
                             }
                         }
@@ -421,7 +422,7 @@ Column {
                         parent.color = "#209e20"
                         service.saveSetting("General", "SelectedDevices", JSON.stringify(selectedDevices))
                     }
-                    discovery.updateDevices(selectedDevices);
+                    discovery.connect(selectedDevices);
                 }
             }
         }

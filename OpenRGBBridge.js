@@ -30,11 +30,12 @@ export function Render() {
 		color = hexToRgb(forcedColor);
 	} else {
 		color = device.color(0, 0);
+	}
 
 		protocol.setColors(color[0], color[1], color[2]);
 		device.pause(2);
-	}
 }
+
 export function Shutdown() {
 	device.pause(5000);
 	let color = hexToRgb(shutdownColor);
@@ -52,10 +53,10 @@ export function DiscoveryService() {
 		}
 	};
 
-	this.updateDevices = function (devices) {
-		for (let i = 0; i < devices.length; i++) {
-			this.AddDevice(devices[i]);
-		}
+	this.removedDevices = function (deviceId) {
+		let controller = service.getController(deviceId);
+		service.removeController(controller);
+		service.suppressController(controller);
 	}
 
 	this.AddDevice = function (device) {
@@ -78,9 +79,13 @@ class OpenRGBDevice {
 	update() {
 		service.log("Updating device: " + this.name);
 		service.log("Device ID: " + this.id);
-		service.updateController(this);
-		service.addController(this);
-		service.announceController(this);
+		const controller = service.getController(this.id)
+		if (controller === undefined) {
+			service.addController(this);
+			service.announceController(this);
+		} else {
+			service.updateController(this);
+		}
 	};
 }
 
