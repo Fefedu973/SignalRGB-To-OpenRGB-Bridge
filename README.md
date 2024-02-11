@@ -3,11 +3,11 @@ An add-on for signalRGB that allows to control OpenRGB Devices
 This plugin allows you to make Nvidia Founder Editions graphics cards compatible with signalRGB
 
 ## What is working Right now ?
-- Connection with one device with openRGB provided that it's id is not changed
-- One zone color support
+- Device from OpenRGB sync with SignalRGB
+- One zone color control
+- Multiple Device Support
 
 ## TODO:
-- Multiple device support
 - Mutliple LED support
 - Device sepcific controls
 - Fixing bugs related to device recognition and more
