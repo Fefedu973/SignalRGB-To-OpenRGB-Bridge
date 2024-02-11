@@ -41,6 +41,7 @@ export function Shutdown() {
 	protocol.setColors(color[0], color[1], color[2]);
 	device.pause(5000);
 }
+}
 
 export function DiscoveryService() {
 
@@ -90,6 +91,7 @@ class OpenRGBProtocol {
 		this.host = '127.0.0.1'
 		this.port = 6742
 	}
+
 
 	setColors(r, g, b) {
 		const xhr = new XMLHttpRequest();
