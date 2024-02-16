@@ -4,11 +4,12 @@ This plugin allows you to make Nvidia Founder Editions graphics cards compatible
 
 ## What is working Right now ?
 - Device from OpenRGB sync with SignalRGB
-- One zone color control
+- Multiple zones control support 
 - Multiple Device Support
+- Independent LED control support
+- Custom shaped devices support 
 
 ## TODO:
-- Mutliple LED support
 - Device sepcific controls
 - Fixing bugs related to device recognition and more
 - Get rid of the stupid node js server
