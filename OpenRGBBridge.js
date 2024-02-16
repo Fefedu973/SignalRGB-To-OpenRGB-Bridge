@@ -14,25 +14,223 @@ export function ControllableParameters() {
 }
 
 let protocol;
+let deviceLedsPositions = [];
+let allSubdeviceLedsPosition = [];
+let uniqueSubdeviceLedPosition = [];
+let subdeviceLedsCount = [];
+let subdevices = [];
 
 export function Initialize() {
+	if (controller.zones.length > 1) {
+		//create an array with the number of leds for each subdevice
+		for (let i = 0; i < controller.zones.length; i++) {
+			if (controller.zones[i].type === 0 || controller.zones[i].type === 1) {
+				if (controller.zones[i].ledsCount > 0) {
+					subdeviceLedsCount.push(controller.zones[i].ledsCount);
+				}
+			}
+		}
+		device.log(subdeviceLedsCount);
+
+
+		for (let i = 0; i < controller.zones.length; i++) {
+			if (controller.zones[i].type === 0 || controller.zones[i].type === 1) {
+				if (controller.zones[i].ledsCount > 0) {
+					device.createSubdevice(controller.id + "_" + controller.zones[i].name);
+					device.setSubdeviceName(controller.id + "_" + controller.zones[i].name, controller.zones[i].name);
+					device.setSubdeviceSize(controller.id + "_" + controller.zones[i].name, controller.zones[i].ledsCount, 1);
+					let subdeviceLedsNames = [];
+					let subdeviceLedsPositionsX = [];
+					let subdeviceLedsPositionsY = [0];
+					let w = 0;
+					let ledCount = subdeviceLedsCount[i];
+					let previousLedCount = 0;
+					for (let j = 0; j < i; j++) {
+						previousLedCount += subdeviceLedsCount[j];
+					}
+					
+					//for each led in the subdevice between the previousLedCount and the previousLedCount + ledCount
+					for (let k = previousLedCount; k < previousLedCount + ledCount; k++) {
+					
+						subdeviceLedsNames.push(controller.leds[k].name);
+						subdeviceLedsPositionsX.push(w);
+						w++;
+					}
+					device.setSubdeviceLeds(controller.id + "_" + controller.zones[i].name, subdeviceLedsNames, subdeviceLedsPositionsX, subdeviceLedsPositionsY);
+
+					subdevices.push(controller.id + "_" + controller.zones[i].name);
+					
+					uniqueSubdeviceLedPosition = subdeviceLedsPositionsX.map((x) => [x,subdeviceLedsPositionsY[0]]);
+                    allSubdeviceLedsPosition.push(uniqueSubdeviceLedPosition);
+					device.log(allSubdeviceLedsPosition);
+					device.log(uniqueSubdeviceLedPosition);
+
+				}
+			} else {
+				if (controller.zones[i].type === 2) {
+					//type 2 is a matrix of leds
+					device.createSubdevice(controller.id + "_" + controller.zones[i].name);
+					device.setSubdeviceName(controller.id + "_" + controller.zones[i].name, controller.zones[i].name);
+					let matrixWidth = controller.zones[i].matrix.width;
+					let matrixHeight = controller.zones[i].matrix.height;
+					device.setSubdeviceSize(controller.id + "_" + controller.zones[i].name, matrixWidth, matrixHeight);
+
+
+					let subdeviceLedsNames = [];
+					let subdeviceLedsPositionsX = [];
+					let subdeviceLedsPositionsY = [];
+					let ledCount = subdeviceLedsCount[i];
+					let previousLedCount = 0;
+					for (let j = 0; j < i; j++) {
+						previousLedCount += subdeviceLedsCount[j];
+					}
+					
+					//for each led in the subdevice between the previousLedCount and the previousLedCount + ledCount
+					for (let k = previousLedCount; k < previousLedCount + ledCount; k++) {
+						// Extract x and y coordinates from the matrix
+						let matrix = controller.zones[i].matrix.keys;
+						let x, y;
+						for (let row = 0; row < matrix.length; row++) {
+							let col = matrix[row].indexOf(k);
+							if (col !== -1) {
+								x = col;
+								y = row;
+								break;
+							}
+						}
+				
+						subdeviceLedsNames.push(controller.leds[k].name);
+						subdeviceLedsPositionsX.push(x);
+						subdeviceLedsPositionsY.push(y);
+					}
+
+					device.log(subdeviceLedsNames);
+					device.log(subdeviceLedsPositionsX);
+					device.log(subdeviceLedsPositionsY);
+
+					device.setSubdeviceLeds(controller.id + "_" + controller.zones[i].name, subdeviceLedsNames, subdeviceLedsPositionsX, subdeviceLedsPositionsY);
+
+					subdevices.push(controller.id + "_" + controller.zones[i].name);
+
+					uniqueSubdeviceLedPosition = subdeviceLedsPositionsX.map((x, i) => [x, subdeviceLedsPositionsY[i]]);
+					allSubdeviceLedsPosition.push(uniqueSubdeviceLedPosition);
+					device.log(allSubdeviceLedsPosition);
+					device.log(uniqueSubdeviceLedPosition);
+					
+				}
+			}
+		}
+		device.SetIsSubdeviceController(true)
+	} else {
+		if (controller.zones[0].type === 0 || controller.zones[0].type === 1) {
+			
+			let deviceLedsNames = [];
+			let deviceLedsPositionsX = [];
+			let deviceLedsPositionsY = [0];
+			let w = 0;
+			for (let i = 0; i < controller.leds.length; i++) {
+				deviceLedsNames.push(controller.leds[i].name);
+				deviceLedsPositionsX.push(w);
+				w++;
+			}
+			deviceLedsPositions = deviceLedsPositionsX.map((x) => [x, deviceLedsPositionsY[0]]);
+			device.log(deviceLedsPositions)
+			device.log(controller.leds.length)
+			device.setControllableLeds(deviceLedsNames, deviceLedsPositions);
+			device.setSize([controller.leds.length, 1]);
+			
+		} else {
+			if (controller.zones[0].type === 2) {
+				//type 2 is a matrix of leds
+				let matrixWidth = controller.zones[0].matrix.width;
+				let matrixHeight = controller.zones[0].matrix.height;
+				device.setSize([matrixWidth, matrixHeight]);
+
+
+				let deviceLedsNames = [];
+				let deviceLedsPositionsX = [];
+				let deviceLedsPositionsY = [];
+				
+				//for each led in the subdevice between the previousLedCount and the previousLedCount + ledCount
+				for (let i = 0; i < controller.leds.length; i++) {
+					// Extract x and y coordinates from the matrix
+					let matrix = controller.zones[0].matrix.keys;
+					let x, y;
+					for (let row = 0; row < matrix.length; row++) {
+						let col = matrix[row].indexOf(i);
+						if (col !== -1) {
+							x = col;
+							y = row;
+							break;
+						}
+					}
+			
+					deviceLedsNames.push(controller.leds[i].name);
+					deviceLedsPositionsX.push(x);
+					deviceLedsPositionsY.push(y);
+				}
+
+				device.log(deviceLedsNames);
+				device.log(deviceLedsPositionsX);
+				device.log(deviceLedsPositionsY);
+
+				deviceLedsPositions = deviceLedsPositionsX.map((x, i) => [x, deviceLedsPositionsY[i]]);
+				device.setControllableLeds(deviceLedsNames, deviceLedsPositions);
+				
+			}
+		}
+	}
 	device.setName(controller.name)
 	device.ControllableParameters
-	device.setSize(10, 10)
-	device.setControllableLeds(["LED 1"], [[0, 0]]);
+	//device.setSize(10, 10)
+	//device.setControllableLeds(["LED 1"], [[0, 0]]);
+	device.setImageFromUrl('data:image/png;base64,' + logo);
 	protocol = new OpenRGBProtocol(controller);
 }
 
 export function Render() {
-	let color;
+	//device.log(subdevices);
+	if (subdevices.length > 0) {
+		let color = [];
+		for (let i = 0; i < subdevices.length; i++) {
+			// device.log(allSubdeviceLedsPosition[i]);
+			// device.log(subdeviceLedsCount[i]);
+			// device.log(subdevices[i]);
+			
+			for (let j = 0; j < allSubdeviceLedsPosition[i].length; j++) {
+			//for each led in the subdevice
+				let ledX = allSubdeviceLedsPosition[i][j][0];
+				let ledY = allSubdeviceLedsPosition[i][j][1];
+				if (LightingMode === "Forced") {
+					color = hexToRgb(forcedColor);
+				} else {
+					color.push(device.subdeviceColor(subdevices[i], ledX, ledY));
+					// device.log(device.subdeviceColor(subdevices[i], ledX, ledY))
+					// device.log(subdevices[i])
+				}
+			}
+			device.log(color);
+			
 
-	if (LightingMode === "Forced") {
-		color = hexToRgb(forcedColor);
+		}
+		protocol.setMultiColors(color);
 	} else {
-		color = device.color(0, 0);
+		let color = [];
+		for (let i = 0; i < controller.leds.length; i++) {
+			//device.log(deviceLedsPositions)
+			let ledX = deviceLedsPositions[i][0];
+			let ledY = deviceLedsPositions[i][1];
+			if (LightingMode === "Forced") {
+				color = hexToRgb(forcedColor);
+			} else {
+				//colors are an array of 3 integers push the
+				color.push(device.color(ledX, ledY));
+			}
+			//device.log(color);
+		}
+		protocol.setMultiColors(color);	
 	}
-
-		protocol.setColors(color[0], color[1], color[2]);
+	//device.log(subdevices);
 		device.pause(2);
 }
 
@@ -55,8 +253,10 @@ export function DiscoveryService() {
 
 	this.removedDevices = function (deviceId) {
 		let controller = service.getController(deviceId);
-		service.removeController(controller);
-		service.suppressController(controller);
+		if (controller !== undefined) {
+			service.removeController(controller);
+			service.suppressController(controller);
+		}
 	}
 
 	this.AddDevice = function (device) {
@@ -73,18 +273,48 @@ class OpenRGBDevice {
 		this.id = device.deviceId;
 		this.name = device.name;
 		this.colors = device.colors;
+		this.modes = device.modes;
+		this.activeMode = device.activeMode;
+		this.zones = device.zones;
+		this.leds = device.leds;
 		this.update();
 	}
 
 	update() {
+		if (this.modes[this.activeMode].name !== "Direct") {
+			//search for the direct mode in the modes array and set it as the active mode
+			for (let i = 0; i < this.modes.length; i++) {
+				if (this.modes[i].name === "Direct") {
+					service.log("Setting mode to direct");
+					service.log("Device ID: " + this.id);
+					service.log("Mode ID: " + i);
+					//call a function to set the active mode to direct
+					const xhr = new XMLHttpRequest();
+					xhr.open("GET", `http://localhost:9730/setMode?mode=${i}&deviceId=${this.id}`, true);
+					xhr.onreadystatechange = function () {
+						if (xhr.readyState === 4 && xhr.status === 200) {
+							return;
+						}
+					}
+					xhr.send();
+					break;
+				}
+			}
+		}
+
 		service.log("Updating device: " + this.name);
 		service.log("Device ID: " + this.id);
 		const controller = service.getController(this.id)
 		if (controller === undefined) {
 			service.addController(this);
 			service.announceController(this);
+			service.log("Controller added");
 		} else {
-			service.updateController(this);
+			service.removeController(controller);
+			service.suppressController(controller);
+			service.addController(this);
+			service.announceController(this);
+			service.log("Controller updated");
 		}
 	};
 }
@@ -105,7 +335,31 @@ class OpenRGBProtocol {
 			green: g,
 			blue: b
 		})
+
+		device.log(colors);
+
 		xhr.open("GET", `http://localhost:9730/setColors?host=${this.host}&port=${this.port}&colors=${JSON.stringify(colors)}&deviceId=${this.deviceId}`, true);
+		xhr.onreadystatechange = function () {
+			if (xhr.readyState === 4 && xhr.status === 200) {
+				return;
+			}
+		};
+		xhr.send();
+	}
+
+	setMultiColors(colors) {
+		//colors is an array of arrays of 3 integers convert it to an array of objects with the keys red, green and blue and the values of the integers in the array
+		let colorsArray = [];
+		for (let i = 0; i < colors.length; i++) {
+			colorsArray.push({
+				red: colors[i][0],
+				green: colors[i][1],
+				blue: colors[i][2]
+			});
+		}
+		//device.log(colorsArray);
+		const xhr = new XMLHttpRequest();
+		xhr.open("GET", `http://localhost:9730/setColors?host=${this.host}&port=${this.port}&colors=${JSON.stringify(colorsArray)}&deviceId=${this.deviceId}`, true);
 		xhr.onreadystatechange = function () {
 			if (xhr.readyState === 4 && xhr.status === 200) {
 				return;

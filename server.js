@@ -129,7 +129,7 @@ app.get("/setColors", async (req, res) => {
 
         colors = JSON.parse(colors);
 
-        console.log("Changing colors of device", deviceId, "to", colors);
+        //console.log("Changing colors of device", deviceId, "to", colors);
 
         if (!colors || !deviceId) {
             return res.status(400).send("Both colors and deviceId parameters are required.");
@@ -144,9 +144,38 @@ app.get("/setColors", async (req, res) => {
         await client.updateLeds(deviceId, colors);
 
         res.status(200).send("Colors updated successfully");
-        console.log("Colors updated successfully");
+        //console.log("Colors updated successfully");
     } catch (error) {
         console.error("Error setting colors:", error);
+        res.status(500).send("Internal Server Error");
+    }
+});
+
+app.get("/setMode", async (req, res) => {
+    try {
+        let { mode, deviceId } = req.query;
+
+        mode = parseInt(mode);
+        deviceId = parseInt(deviceId);
+
+        console.log("Changing mode of device", deviceId, "to", mode);
+
+        if (!mode || !deviceId) {
+            return res.status(400).send("Both mode and deviceId parameters are required.");
+        }
+
+        const controllerCount = await client.getControllerCount();
+
+        if (deviceId < 0 || deviceId >= controllerCount) {
+            return res.status(400).send("Invalid deviceId.");
+        }
+
+        await client.updateMode(deviceId, mode);
+
+        res.status(200).send("Mode updated successfully");
+        console.log("Mode updated successfully");
+    } catch (error) {
+        console.error("Error setting mode:", error);
         res.status(500).send("Internal Server Error");
     }
 });
