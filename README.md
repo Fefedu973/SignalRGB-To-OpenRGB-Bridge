@@ -1,6 +1,6 @@
 # SignalRGB To OpenRGB Bridge
 An add-on for signalRGB that allows to control OpenRGB Devices
-This plugin allows you to make Nvidia Founder Editions graphics cards compatible with signalRGB
+This plugin allows you for exemple to make Nvidia Founder Editions graphics cards compatible with signalRGB ! but it's not limited to those devices, it support all devices supported by OpenRGB ! (you can use this plugin to fill in the gabs of supported devices by signalRGB in your setup). ⚠️ This plugin does not bring the support of all devices to signalRGB  but only the devices supported by openRGB in the first place.
 
 [![Click here to add this repo to SignalRGB](https://github.com/SRGBmods/qmk-plugins/blob/main/_images/add-to-signalrgb.png)](https://srgbmods.net/s?p=addon/install?url=https://github.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge)
 
@@ -15,6 +15,11 @@ This plugin allows you to make Nvidia Founder Editions graphics cards compatible
 - Device sepcific controls
 - Fixing bugs related to device recognition and more
 - Get rid of the stupid node js server
+
+## Known Issues
+- Shutdown color is not applied when shutting down the pc directly because the intermediary server is closed before sending the last shutdown color. (it is still working if you close signalRGB and the shut the pc down) (fixable)
+- If the connection is lost with OpenRGB you need to restart the server or reconnect (fixable)
+- As OpenRGB doesn't provide unique id for each device, only an order id (0,1,2...) if the device order is changed or if new devices are discovered in the meantime it's very hard to keep track of the previously selected device and which one was which one so for now you need to reset the selected device list by clicking the "delete all" button in the plugin settings page. (hardly fixable)
 
 ## SETUP INSTRUCTIONS
 
