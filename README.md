@@ -62,6 +62,17 @@ You can change many settings for the intermediary server in order to suits your 
 You can of course enbale multiple settings at the same time. Use it as you want !
 
 ### Configure the Device LED Layout in OpenRGB (Optionnal)
-- WIP
+- If you have device that have a special shape (eg: for exemple fans are round but signal rgb don't know their shape so the effects are going to be applied as there were a straight line.
+  - For some devices you may need to manually add the number of leds your device has (for motherboard rgb header for exemple) by selecting the zone you want in OpenRGB and selecting edit and the enter the number of led your device has. See the OpenRGB documentation to see if your device is supported or if you have any questions.
+- To edit the LED postion head into the Visual Map tab.
+- On the left you will see the list of your device. Click on the + sign to add the device you want to edit the shape on the grid, then click "auto resize"
+- Click on the checkmark icon of the device you added and make a custom shape by selecting shape -> custom and then on "Edit Shape"
+- Inside the new popup window you can do pre-defined shapes or you can drag each led arround individually to make the shpae you want that that will match your device
+- Once done click on "auto resize" and on "save"
+- In the main window click on "auto resize"
+- Your device modifications are ready to be saved now !
+- Click on "Vmap menu" and hit "save" set the name to match your device name and add "custom shape" to it and click "ok" and click another time on Vmap Meanu and tick "register controller"
+- Go back into the "Devices" tab and you should see a new device. It is in fact the same device as the device you've just modified but with the new led positions as the plugin cannot direclty edit the main device led position
+- Now you can continue the setup process. But make sure when it's going to be the time of connecting your device with SignalRGB to select the device with the custom shape and not the normal one.
 
 ## Please open an issue if you have any issue or suggestions !
