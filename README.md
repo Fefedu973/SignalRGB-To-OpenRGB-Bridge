@@ -60,6 +60,7 @@ You can change many settings for the intermediary server in order to suits your 
 - You can prevent the server for starting with windows by adding "--no-startup" to the filename (note that you will need to manually start it when you start SignalRGB)
 - If you have issue with my plugin you can check the logs of the server by adding "--console" to the filename. This will show the console on next server startup. Please make sure to remove it if you don't want that anymore. You can also check logs in my plugin config page in SignalRGB by enabling "shoow console" and in each device by clicking on the device that is not working in the devices page, then go into the question mark tab and enable Show console. If you have issue please head into the [Signal RGB Plugin Test server](https://discord.gg/Bn4q4h9QCH) and leave a message here and tag me (Fefe_du_973) or open an issue on the github
 You can of course enbale multiple settings at the same time. Use it as you want !
+- If you nned to stop/restart the server you need to stop the server process in the task manager (search for node.js javascript runtime) and start it again manually
 
 ### Configure the Device LED Layout in OpenRGB (Optionnal)
 - If you have device that have a special shape (eg: for exemple fans are round but signal rgb don't know their shape so the effects are going to be applied as there were a straight line.
