@@ -33,7 +33,7 @@ This plugin allows you for exemple to make Nvidia Founder Editions graphics card
   - Start Server
 - Then go into the SDK Server Tab
 - Click on "Start Server" (you can change the Host and the Port if you want/need but I don't recommend to do that)
-- Then we are going to create a "shutdown profile". This will allow signalRGB to support changing the shutdown color of your devices (colors that are set when you close SignalRGB or your computer.
+- Then we are going to create a "shutdown profile". This will allow signalRGB to support changing the shutdown color of your devices (colors that are set when you close SignalRGB or your computer.) You need to do that because when trying applying the last color of shutdown color directly when using the signalRGB feature the intermediary server and openRGB were already closed when turning the computer off, this means that the shutdown color wasn't applied. If you change the shutdown color in SignalRGB it won't be synced with your shudown profile that we are going to create for now. The signalRGB shutdown color as you configured in signalRGB will only work if you close SignalRGB because openRGB and the intermediary server are not closed during this process. This means that for now the shutdown color when shuting your computer down config and implementation is managed by openRGB not signalRGB and their settings are not synced. hope it's clear lol.
    - Click on the little arrow on the right of the the "Save Profile" button
    - In the "Create a new profile" field please insert this EXACT name "shutdown-profile"
    - In the settings -> General Settings scroll to the bottom and enable the "Load Profile" option and set it to the default profile.
