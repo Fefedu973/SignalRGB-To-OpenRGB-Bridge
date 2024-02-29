@@ -1,6 +1,6 @@
 # SignalRGB To OpenRGB Bridge
 An add-on for signalRGB that allows to control OpenRGB Devices
-This plugin allows you for exemple to make Nvidia Founder Editions graphics cards compatible with signalRGB ! but it's not limited to those devices, it support all devices supported by OpenRGB ! (you can use this plugin to fill in the gabs of supported devices by signalRGB in your setup). ⚠️ This plugin does not bring the support of all devices to signalRGB  but only the devices supported by openRGB in the first place.
+This plugin allows you for exemple to make Nvidia Founder Editions graphics cards compatible with signalRGB !. It also remove the lag with the G915 keyboard. but it's not limited to those devices, it support all devices supported by OpenRGB ! (you can use this plugin to fill in the gabs of supported devices by signalRGB in your setup). ⚠️ This plugin does not bring the support of all devices to signalRGB  but only the devices supported by openRGB in the first place.
 
 [![Click here to add this repo to SignalRGB](https://github.com/SRGBmods/qmk-plugins/blob/main/_images/add-to-signalrgb.png)](https://srgbmods.net/s?p=addon/install?url=https://github.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge)
 
