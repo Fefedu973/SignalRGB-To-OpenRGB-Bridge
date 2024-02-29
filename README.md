@@ -33,6 +33,12 @@ This plugin allows you for exemple to make Nvidia Founder Editions graphics card
   - Start Server
 - Then go into the SDK Server Tab
 - Click on "Start Server" (you can change the Host and the Port if you want/need but I don't recommend to do that)
+- Then we are going to create a "shutdown profile". This will allow signalRGB to support changing the shutdown color of your devices (colors that are set when you close SignalRGB or your computer.
+   - Click on the little arrow on the right of the the "Save Profile" button
+   - In the "Create a new profile" field please insert this EXACT name "shutdown-profile"
+   - In the settings -> General Settings scroll to the bottom and enable the "Load Profile" option and set it to the default profile.
+   - Enable "Set Profile on Exit" and select the "shutdown-profile" profile
+   - Edit the shutdown profile to match the lightning you want on shutdown. Don't forget to save it
 #### Optionnal: Install the OpenRGB Visual Map Plugin (if you want to customize the LED position of your device)
 - Download The OpenRGB Visual Map Plugin [here](https://openrgb.org/plugins.html).
 - Extract the zip file
