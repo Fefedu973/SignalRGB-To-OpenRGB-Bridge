@@ -39,6 +39,7 @@ This plugin allows you for exemple to make Nvidia Founder Editions graphics card
    - In the settings -> General Settings scroll to the bottom and enable the "Load Profile" option and set it to the default profile.
    - Enable "Set Profile on Exit" and select the "shutdown-profile" profile
    - Edit the shutdown profile to match the lightning you want on shutdown. Don't forget to save it
+- Make sure to disable devices that you don't need openRGB to control by going into Settings -> Supported Devices and searching for the devices that shows up in openRGB you don't want and un-ticking them. Make sure to click "Apply changes" and to restart OpenRGB after that
 #### Optionnal: Install the OpenRGB Visual Map Plugin (if you want to customize the LED position of your device)
 - Download The OpenRGB Visual Map Plugin [here](https://openrgb.org/plugins.html).
 - Extract the zip file
