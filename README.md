@@ -13,13 +13,11 @@ This plugin allows you for exemple to make Nvidia Founder Editions graphics card
 
 ## TODO:
 - Device sepcific controls
-- Fixing bugs related to device recognition and more
 - Get rid of the stupid node js server
+- Sync shutdown color from signalRGB to openRGB
 
 ## Known Issues
-- Shutdown color is not applied when shutting down the pc directly because the intermediary server is closed before sending the last shutdown color. (it is still working if you close signalRGB and the shut the pc down) (tricky to fix)
-- As OpenRGB doesn't provide unique id for each device, only an order id (0,1,2...) if the device order is changed or if new devices are discovered in the meantime it's very hard to keep track of the previously selected device and which one was which one so for now you need to reset the selected device list by clicking the "delete all" button in the plugin settings page. (hardly fixable)
-
+- There isn't any known issues rigth now
 ## SETUP INSTRUCTIONS
 
 ### Install and configure OpenRGB (only the first time)
