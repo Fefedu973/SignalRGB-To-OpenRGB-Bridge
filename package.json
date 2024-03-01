@@ -3,6 +3,7 @@
     "auto-launch": "^5.0.6",
     "express": "^4.18.2",
     "node-hide-console-window": "^2.2.0",
-    "openrgb-sdk": "^0.5.2"
+    "openrgb-sdk": "^0.5.2",
+    "ps-list": "^8.1.1"
   }
 }

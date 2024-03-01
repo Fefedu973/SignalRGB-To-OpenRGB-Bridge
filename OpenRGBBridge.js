@@ -235,10 +235,9 @@ export function Render() {
 }
 
 export function Shutdown() {
-	device.pause(5000);
+	device.pause(250);
 	let color = hexToRgb(shutdownColor);
 	protocol.setColors(color[0], color[1], color[2]);
-	device.pause(5000);
 }
 
 
