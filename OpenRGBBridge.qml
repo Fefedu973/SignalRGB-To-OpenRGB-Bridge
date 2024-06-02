@@ -5,7 +5,12 @@ Item {
     Component.onCompleted: {
     useCustomPort.checked = service.getSetting("General", "UseCustomPort") === "true"
     customPortContainer.active = useCustomPort.checked
-    selectedDevices = JSON.parse(service.getSetting("General", "SelectedDevices")) || []
+    try {
+    selectedDevices = JSON.parse(service.getSetting("General", "SelectedDevices"));
+} catch (e) {
+    selectedDevices = [];
+}
+
     if (useCustomPort.checked)
     {
         customPortContainer.item.children[0].text = service.getSetting("General", "CustomPort") || "9730"
@@ -322,7 +327,12 @@ Row {
                             let res = JSON.parse(xhr.responseText)
                             deviceList = res
                             deviceRepeater.model = deviceList
-                            selectedDevices = JSON.parse(service.getSetting("General", "SelectedDevices")) || []
+                            try {
+    selectedDevices = JSON.parse(service.getSetting("General", "SelectedDevices"));
+} catch (e) {
+    selectedDevices = [];
+}
+
                             if (selectedDevices.length > 0)
                             {
                                 for (var i = 0; i < deviceRepeater.count; i++) {
@@ -351,7 +361,12 @@ Row {
             let res = JSON.parse(xhr.responseText)
             deviceList = res
             deviceRepeater.model = deviceList
-            selectedDevices = JSON.parse(service.getSetting("General", "SelectedDevices")) || []
+            try {
+    selectedDevices = JSON.parse(service.getSetting("General", "SelectedDevices"));
+} catch (e) {
+    selectedDevices = [];
+}
+
             if (selectedDevices.length > 0)
             {
                 for (var i = 0; i < deviceRepeater.count; i++) {
@@ -462,7 +477,12 @@ Column {
                         }
                     }
                     onClicked: {
-                        selectedDevices = JSON.parse(service.getSetting("General", "SelectedDevices")) || []
+                        try {
+    selectedDevices = JSON.parse(service.getSetting("General", "SelectedDevices"));
+} catch (e) {
+    selectedDevices = [];
+}
+
                         if (selectedDevices.length == 0)
                         {
                             selectedDevices.push(modelData)
