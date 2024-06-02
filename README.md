@@ -15,6 +15,7 @@ This plugin allows you for exemple to make Nvidia Founder Editions graphics card
 - Device sepcific controls
 - Get rid of the stupid node js server
 - Sync shutdown color from signalRGB to openRGB
+- Fix a JSON Parse Error on first plugin usage (can be fixed by clicking the delete all button)
 
 ## Known Issues
 - There isn't any known issues rigth now
