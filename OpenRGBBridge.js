@@ -93,7 +93,7 @@ export function Initialize() {
 					}
 
 					//for each led in the subdevice between the previousLedCount and the previousLedCount + ledCount
-					for (let k = 0; k < previousLedCount + ledCount; k++) {
+					for (let k = 0; k < ledCount; k++) {
 						// Extract x and y coordinates from the matrix
 						let matrix = controller.zones[i].matrix.keys;
 						let x, y;
