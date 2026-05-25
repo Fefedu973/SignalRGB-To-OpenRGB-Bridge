@@ -44,6 +44,28 @@ function encodeUpdateLedsPayload(colors) {
   return payload;
 }
 
+function normalizeBytes(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((byte) => byte & 0xff);
+  }
+
+  if (typeof ArrayBuffer !== "undefined" && value instanceof ArrayBuffer) {
+    return Array.from(new Uint8Array(value));
+  }
+
+  if (typeof ArrayBuffer !== "undefined" && value.buffer instanceof ArrayBuffer) {
+    const offset = value.byteOffset || 0;
+    const length = value.byteLength !== undefined ? value.byteLength : value.length;
+    return Array.from(new Uint8Array(value.buffer, offset, length));
+  }
+
+  return [];
+}
+
 const colors = [
   [0xff, 0x00, 0x00],
   [0x00, 0x80, 0x40]
@@ -59,5 +81,9 @@ assert.strictEqual(readU32(payload, 0), 14);
 assert.strictEqual(payload[4] | (payload[5] << 8), 2);
 assert.deepStrictEqual(payload.slice(6, 10), [0xff, 0x00, 0x00, 0x00]);
 assert.deepStrictEqual(payload.slice(10, 14), [0x00, 0x80, 0x40, 0x00]);
+
+const backingBuffer = new Uint8Array([0, 0, 0, 0, 0x4f, 0x52, 0x47, 0x42, 1, 2, 3, 4, 0, 0]).buffer;
+const packetView = new Uint8Array(backingBuffer, 4, 8);
+assert.deepStrictEqual(normalizeBytes(packetView), [0x4f, 0x52, 0x47, 0x42, 1, 2, 3, 4]);
 
 console.log("OpenRGB codec validation passed.");

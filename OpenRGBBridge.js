@@ -896,6 +896,9 @@ class OpenRGBClient {
 		});
 
 		if (pendingIndex < 0) {
+			if (this.pending && this.pending.length > 0) {
+				this.logger("Ignoring unmatched OpenRGB packet: command " + packet.commandId + " device " + packet.deviceId + " length " + packet.length + ".");
+			}
 			return;
 		}
 
@@ -1998,7 +2001,9 @@ function normalizeBytes(value) {
 	}
 
 	if (typeof ArrayBuffer !== "undefined" && value.buffer instanceof ArrayBuffer) {
-		return Array.from(new Uint8Array(value.buffer));
+		const offset = value.byteOffset || 0;
+		const length = value.byteLength !== undefined ? value.byteLength : value.length;
+		return Array.from(new Uint8Array(value.buffer, offset, length));
 	}
 
 	if (typeof value === "string") {
