@@ -22,8 +22,6 @@ const PORT_SETTING = "SDKServerPort";
 const SELECTED_DEVICES_SETTING = "SelectedDevices";
 const LAST_DEVICES_SETTING = "LastDevices";
 const STATUS_SETTING = "Status";
-const SCAN_FLAG_SETTING = "ScanActive";
-const SCAN_FLAG_MAX_MS = 120000;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 6742;
 const CLIENT_PROTOCOL_VERSION = 5;
@@ -33,9 +31,7 @@ const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenR
 const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_white/";
 const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
 const REQUEST_TIMEOUT_MS = 10000;
-const DISCOVERY_REQUEST_TIMEOUT_MS = 0;
-const DISCOVERY_PUMP_INTERVAL_MS = 1000;
-const DISCOVERY_PUMP_LOG_MS = 10000;
+const DISCOVERY_REQUEST_TIMEOUT_MS = 10000;
 
 const DeviceTypeIcon = {
 	0: "mainboard",
@@ -87,9 +83,6 @@ const Command = {
 let renderClient;
 let renderClientKey = "";
 let renderStates = {};
-let lastScanFlagCheck = 0;
-let scanActive = false;
-let scanSuspendLogged = false;
 
 export function Initialize() {
 	device.setName(controller.name || "OpenRGB Device");
@@ -101,25 +94,6 @@ export function Initialize() {
 }
 
 export function Render() {
-	// While a discovery scan runs, CLOSE this device's render connection so OpenRGB is
-	// free to read it: OpenRGB serves each client on its own thread and a device that is
-	// being streamed (continuous SetLEDs) blocks the scan's controller-data read on the
-	// same device, which is what makes the selected/rendering devices time out.
-	if (isScanActive()) {
-		if (renderClient) {
-			renderClient.close();
-			renderClient = undefined;
-			renderClientKey = "";
-		}
-		if (!scanSuspendLogged) {
-			scanSuspendLogged = true;
-			logFromDevice("OpenRGB scan in progress: pausing rendering for " + (controller.name || controller.deviceId || controller.id) + " to free the device.");
-		}
-		device.pause(250);
-		return;
-	}
-	scanSuspendLogged = false;
-
 	const client = ensureRenderClient(controller, logFromDevice);
 	if (!client) {
 		return;
@@ -181,7 +155,6 @@ export function DiscoveryService() {
 	this.refreshId = 0;
 	this.revision = 1;
 	this.busy = false;
-	this.pendingControllerRead = undefined;
 
 	this.Initialize = function () {
 		this.connectSelectedDevices();
@@ -190,9 +163,7 @@ export function DiscoveryService() {
 	this.Update = function () {
 		if (this.client) {
 			this.client.checkRequestTimeouts();
-			this.client.pumpPendingRequests();
 		}
-		this.runPendingControllerRead();
 
 		if (this.firstUpdate) {
 			this.firstUpdate = false;
@@ -205,7 +176,6 @@ export function DiscoveryService() {
 		port = normalizePort(port);
 		const refreshId = ++this.refreshId;
 		this.busy = true;
-		setScanActive(true);
 		this.bumpRevision();
 		saveSetting(HOST_SETTING, host);
 		saveSetting(PORT_SETTING, String(port));
@@ -226,7 +196,33 @@ export function DiscoveryService() {
 					return;
 				}
 
-				self.queueControllerRead(client, refreshId, host, port);
+				self.setStatus("Connected. Reading OpenRGB controllers...");
+				client.getAllControllers(function (devices, error) {
+					if (self.refreshId !== refreshId || self.client !== client) {
+						return;
+					}
+
+					if (error) {
+						self.setStatus(error);
+						self.finishRefresh(client);
+						return;
+					}
+
+					self.availableDevices = assignStableDeviceIds(devices, host, port);
+					self.availableDeviceSummaries = buildDeviceSummaries(self.availableDevices);
+					saveSetting(LAST_DEVICES_SETTING, JSON.stringify(self.availableDeviceSummaries));
+					const selectedBeforeRefresh = self.selectedDevices.length > 0 ? self.selectedDevices : readSelectedDevices();
+					self.hasStoredSelectedDevices = self.hasStoredSelectedDevices || hasStoredSelectedDevices();
+					removeStaleControllers(selectedBeforeRefresh, self.availableDevices);
+					self.selectedDevices = self.hasStoredSelectedDevices
+						? getSelectedDevicesById(self.availableDevices, selectedBeforeRefresh)
+						: self.availableDeviceSummaries.slice(0);
+					saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(self.selectedDevices));
+					self.hasStoredSelectedDevices = true;
+					self.syncControllers();
+					self.finishRefresh(client);
+					self.setStatus("Found " + self.availableDevices.length + " OpenRGB device(s). SignalRGB controllers updated.");
+				});
 			},
 			onError: function (message) {
 				if (self.refreshId !== refreshId || self.client !== client) {
@@ -269,7 +265,6 @@ export function DiscoveryService() {
 		const port = readNumberSetting(PORT_SETTING, DEFAULT_PORT);
 		this.setStatus("Requesting OpenRGB hardware rescan at " + host + ":" + port + "...");
 		this.busy = true;
-		setScanActive(true);
 		this.bumpRevision();
 
 		const self = this;
@@ -322,9 +317,7 @@ export function DiscoveryService() {
 	this.getStatus = function () {
 		if (this.client) {
 			this.client.checkRequestTimeouts();
-			this.client.pumpPendingRequests();
 		}
-		this.runPendingControllerRead();
 
 		return String(this.status || readSetting(STATUS_SETTING, "Idle"));
 	};
@@ -606,10 +599,6 @@ export function DiscoveryService() {
 
 	this.finishRefresh = function (client) {
 		this.busy = false;
-		setScanActive(false);
-		if (this.pendingControllerRead && this.pendingControllerRead.client === client) {
-			this.pendingControllerRead = undefined;
-		}
 		if (this.client === client) {
 			this.client = undefined;
 		}
@@ -622,70 +611,6 @@ export function DiscoveryService() {
 	this.bumpRevision = function () {
 		this.revision++;
 		return this.revision;
-	};
-
-	this.queueControllerRead = function (client, refreshId, host, port) {
-		this.pendingControllerRead = {
-			client: client,
-			refreshId: refreshId,
-			host: host,
-			port: port,
-			readAfter: Date.now() + 700
-		};
-		this.setStatus("Connected. Letting live rendering release devices...");
-		this.bumpRevision();
-	};
-
-	this.runPendingControllerRead = function () {
-		const pending = this.pendingControllerRead;
-		if (!pending) {
-			return false;
-		}
-
-		if (this.refreshId !== pending.refreshId || this.client !== pending.client) {
-			this.pendingControllerRead = undefined;
-			return false;
-		}
-
-		if (Date.now() < pending.readAfter) {
-			return false;
-		}
-
-		this.pendingControllerRead = undefined;
-		const self = this;
-		const client = pending.client;
-		const refreshId = pending.refreshId;
-		const host = pending.host;
-		const port = pending.port;
-
-		this.setStatus("Reading OpenRGB controllers...");
-		client.getAllControllers(function (devices, error) {
-			if (self.refreshId !== refreshId || self.client !== client) {
-				return;
-			}
-
-			if (error) {
-				self.setStatus(error);
-				self.finishRefresh(client);
-				return;
-			}
-
-			self.availableDevices = assignStableDeviceIds(devices, host, port);
-			self.availableDeviceSummaries = buildDeviceSummaries(self.availableDevices);
-			saveSetting(LAST_DEVICES_SETTING, JSON.stringify(self.availableDeviceSummaries));
-			const selectedBeforeRefresh = self.selectedDevices.length > 0 ? self.selectedDevices : readSelectedDevices();
-			self.hasStoredSelectedDevices = self.hasStoredSelectedDevices || hasStoredSelectedDevices();
-			removeStaleControllers(selectedBeforeRefresh, self.availableDevices);
-			self.selectedDevices = self.hasStoredSelectedDevices
-				? getSelectedDevicesById(self.availableDevices, selectedBeforeRefresh)
-				: self.availableDeviceSummaries.slice(0);
-			saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(self.selectedDevices));
-			self.hasStoredSelectedDevices = true;
-			self.syncControllers();
-			self.finishRefresh(client);
-			self.setStatus("Found " + self.availableDevices.length + " OpenRGB device(s). SignalRGB controllers updated.");
-		});
-		return true;
 	};
 }
 
@@ -901,9 +826,6 @@ class OpenRGBClient {
 		});
 
 		if (pendingIndex < 0) {
-			if (this.pending && this.pending.length > 0) {
-				this.logger("Ignoring unmatched OpenRGB packet: command " + packet.commandId + " device " + packet.deviceId + " length " + packet.length + ".");
-			}
 			return;
 		}
 
@@ -925,9 +847,6 @@ class OpenRGBClient {
 		const request = {
 			commandId: commandId,
 			deviceId: deviceId || 0,
-			createdAt: Date.now(),
-			lastPumpAt: 0,
-			lastPumpLogAt: 0,
 			timeoutAt: hasTimeout ? Date.now() + timeoutMs : 0,
 			callback: callback || function () {}
 		};
@@ -969,33 +888,6 @@ class OpenRGBClient {
 				clearTimeout(request.timeoutId);
 			}
 			request.callback(undefined, "OpenRGB request timed out: command " + request.commandId + " device " + request.deviceId);
-		}
-	}
-
-	pumpPendingRequests() {
-		if (!this.connected || !this.socket || !this.pending || this.pending.length === 0) {
-			return;
-		}
-
-		const now = Date.now();
-		for (let i = 0; i < this.pending.length; i++) {
-			const request = this.pending[i];
-			if (request.timeoutAt || request.commandId !== Command.requestControllerData) {
-				continue;
-			}
-
-			if (now - request.lastPumpAt < DISCOVERY_PUMP_INTERVAL_MS) {
-				return;
-			}
-
-			request.lastPumpAt = now;
-			if (now - request.lastPumpLogAt >= DISCOVERY_PUMP_LOG_MS) {
-				request.lastPumpLogAt = now;
-				this.logger("Waiting for OpenRGB controller " + (request.deviceId + 1) + "; pumping TCP receive.");
-			}
-
-			this.sendPacket(Command.setClientName, stringBytes(this.clientName), 0);
-			return;
 		}
 	}
 
@@ -1141,29 +1033,7 @@ function getRenderStateKey(controllerData) {
 	return String(controllerData.deviceId || controllerData.id || controllerData.name || "openrgb-device");
 }
 
-// Reads the cross-context "a scan is in progress" flag, throttled so we are not hitting
-// the settings store on every render frame. Stale flags (a crashed scan) are ignored.
-function isScanActive() {
-	const now = Date.now();
-	if (now - lastScanFlagCheck > 200) {
-		lastScanFlagCheck = now;
-		const raw = parseInt(readSetting(SCAN_FLAG_SETTING, "0"), 10);
-		scanActive = !isNaN(raw) && raw > 0 && (now - raw) < SCAN_FLAG_MAX_MS;
-	}
-	return scanActive;
-}
-
-function setScanActive(active) {
-	saveSetting(SCAN_FLAG_SETTING, active ? String(Date.now()) : "0");
-}
-
 function ensureRenderClient(controllerData, logger) {
-	// Do not open a render connection during a scan; it would contend with the scan and
-	// re-introduce the per-device read timeouts. Render() retries once the scan clears.
-	if (isScanActive()) {
-		return undefined;
-	}
-
 	const host = normalizeHost(controllerData.openrgbHost || readSetting(HOST_SETTING, DEFAULT_HOST));
 	const port = normalizePort(controllerData.openrgbPort || readNumberSetting(PORT_SETTING, DEFAULT_PORT));
 	const key = host + ":" + port;
