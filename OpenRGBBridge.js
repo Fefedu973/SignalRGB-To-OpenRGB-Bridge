@@ -142,8 +142,16 @@ export function DiscoveryService() {
 	this.availableDevices = [];
 	this.availableDeviceSummaries = buildDeviceSummaries(safeJsonParse(readSetting(LAST_DEVICES_SETTING, "[]"), []));
 	this.selectedDevices = readSelectedDevices();
+	this.hasStoredSelectedDevices = hasStoredSelectedDevices();
 	this.disabledDeviceIds = readDisabledDeviceIds();
 	this.disabledDeviceSummaries = readDisabledDeviceSummaries();
+	if (this.hasStoredSelectedDevices || this.disabledDeviceIds.length > 0) {
+		this.disabledDeviceIds = mergeDeviceIdLists(
+			this.disabledDeviceIds,
+			deriveDisabledDeviceIdsFromSelection(this.availableDeviceSummaries, this.selectedDevices)
+		);
+	}
+	this.disabledDeviceSummaries = mergeDisabledDeviceSummaries(this.disabledDeviceIds, this.availableDeviceSummaries.concat(this.disabledDeviceSummaries));
 	this.status = readSetting(STATUS_SETTING, "Idle");
 	this.client = undefined;
 	this.firstUpdate = true;
@@ -200,12 +208,21 @@ export function DiscoveryService() {
 					self.availableDevices = assignStableDeviceIds(devices, host, port);
 					self.availableDeviceSummaries = buildDeviceSummaries(self.availableDevices);
 					saveSetting(LAST_DEVICES_SETTING, JSON.stringify(self.availableDeviceSummaries));
+					const selectedBeforeRefresh = readSelectedDevices();
+					self.hasStoredSelectedDevices = self.hasStoredSelectedDevices || hasStoredSelectedDevices();
+					if (self.hasStoredSelectedDevices || self.disabledDeviceIds.length > 0) {
+						self.disabledDeviceIds = mergeDeviceIdLists(
+							self.disabledDeviceIds,
+							deriveDisabledDeviceIdsFromSelection(self.availableDeviceSummaries, selectedBeforeRefresh)
+						);
+					}
 					self.disabledDeviceSummaries = mergeDisabledDeviceSummaries(self.disabledDeviceIds, self.availableDeviceSummaries.concat(self.disabledDeviceSummaries));
 					saveDisabledDeviceIds(self.disabledDeviceIds);
 					saveDisabledDeviceSummaries(self.disabledDeviceSummaries);
-					removeStaleControllers(readSelectedDevices(), self.availableDevices);
+					removeStaleControllers(selectedBeforeRefresh, self.availableDevices);
 					self.selectedDevices = filterEnabledDevices(self.availableDevices, self.disabledDeviceIds);
 					saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(self.selectedDevices));
+					self.hasStoredSelectedDevices = true;
 					self.connectSelectedDevices();
 					self.setStatus("Found " + self.availableDevices.length + " OpenRGB device(s). SignalRGB controllers updated.");
 				});
@@ -311,6 +328,12 @@ export function DiscoveryService() {
 	};
 
 	this.getDisabledDevicesJson = function () {
+		if (this.hasStoredSelectedDevices || this.disabledDeviceIds.length > 0) {
+			this.disabledDeviceIds = mergeDeviceIdLists(
+				this.disabledDeviceIds,
+				deriveDisabledDeviceIdsFromSelection(getKnownDeviceSummaries(this.availableDevices, this.availableDeviceSummaries), this.selectedDevices)
+			);
+		}
 		this.disabledDeviceSummaries = mergeDisabledDeviceSummaries(
 			this.disabledDeviceIds,
 			getKnownDeviceSummaries(this.availableDevices, this.availableDeviceSummaries).concat(this.disabledDeviceSummaries)
@@ -367,6 +390,7 @@ export function DiscoveryService() {
 		saveDisabledDeviceIds(this.disabledDeviceIds);
 		saveDisabledDeviceSummaries(this.disabledDeviceSummaries);
 		saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(this.selectedDevices));
+		this.hasStoredSelectedDevices = true;
 		this.addOrUpdateController(deviceData);
 		this.setStatus("Added " + deviceData.name + ".");
 		return this.status;
@@ -374,31 +398,34 @@ export function DiscoveryService() {
 
 	this.removeDevice = function (deviceId) {
 		deviceId = String(deviceId || "");
+		this.selectedDevices = readSelectedDevices().filter(function (item) {
+			return item.deviceId !== deviceId;
+		});
+		this.disabledDeviceIds = mergeDeviceIdLists(this.disabledDeviceIds, [deviceId]);
+
 		const deviceSummary = findDeviceSummaryById(
 			(this.availableDeviceSummaries || [])
 				.concat(buildDeviceSummaries(this.availableDevices || []))
-				.concat(buildDeviceSummaries(readSelectedDevices())),
+				.concat(buildDeviceSummaries(this.selectedDevices))
+				.concat(this.disabledDeviceSummaries),
 			deviceId
 		);
 		if (deviceSummary) {
 			this.disabledDeviceSummaries = mergeDisabledDeviceSummaries(
-				mergeDeviceIdLists(this.disabledDeviceIds, [deviceId]),
+				this.disabledDeviceIds,
 				[deviceSummary].concat(this.disabledDeviceSummaries)
 			);
-			saveDisabledDeviceSummaries(this.disabledDeviceSummaries);
 		}
+		saveDisabledDeviceIds(this.disabledDeviceIds);
+		saveDisabledDeviceSummaries(this.disabledDeviceSummaries);
+		saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(this.selectedDevices));
+		this.hasStoredSelectedDevices = true;
 
 		const controllerToRemove = service.getController(deviceId);
 		if (controllerToRemove !== undefined) {
 			service.removeController(controllerToRemove);
 		}
 
-		this.selectedDevices = readSelectedDevices().filter(function (item) {
-			return item.deviceId !== deviceId;
-		});
-		this.disabledDeviceIds = mergeDeviceIdLists(this.disabledDeviceIds, [deviceId]);
-		saveDisabledDeviceIds(this.disabledDeviceIds);
-		saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(this.selectedDevices));
 		this.setStatus("Disabled device. " + this.disabledDeviceIds.length + " deleted device(s) saved.");
 		return this.status;
 	};
@@ -419,6 +446,7 @@ export function DiscoveryService() {
 
 		this.selectedDevices = [];
 		saveSetting(SELECTED_DEVICES_SETTING, "[]");
+		this.hasStoredSelectedDevices = true;
 		this.setStatus("Disabled all OpenRGB devices.");
 		return this.status;
 	};
@@ -445,6 +473,7 @@ export function DiscoveryService() {
 		});
 		this.selectedDevices.push(deviceData);
 		saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(this.selectedDevices));
+		this.hasStoredSelectedDevices = true;
 		this.addOrUpdateController(deviceData);
 		this.setStatus("Restored " + deviceData.name + ".");
 		return this.status;
@@ -463,6 +492,7 @@ export function DiscoveryService() {
 
 		this.selectedDevices = devices.slice(0);
 		saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(this.selectedDevices));
+		this.hasStoredSelectedDevices = true;
 		this.connectSelectedDevices();
 		this.setStatus("Restored all OpenRGB devices.");
 		return this.status;
@@ -1512,6 +1542,22 @@ function mergeDeviceIdLists() {
 	return output;
 }
 
+function deriveDisabledDeviceIdsFromSelection(knownDevices, selectedDevices) {
+	const knownIds = getDeviceIds(knownDevices || []);
+	if (knownIds.length === 0) {
+		return [];
+	}
+
+	const selectedIds = getDeviceIds(selectedDevices || []);
+	const output = [];
+	for (let i = 0; i < knownIds.length; i++) {
+		if (selectedIds.indexOf(knownIds[i]) < 0) {
+			output.push(knownIds[i]);
+		}
+	}
+	return output;
+}
+
 function findDeviceById(devices, deviceId) {
 	if (!devices) {
 		return undefined;
@@ -1819,6 +1865,11 @@ function safeJsonParse(value, fallback) {
 
 function readSelectedDevices() {
 	return safeJsonParse(readSetting(SELECTED_DEVICES_SETTING, "[]"), []);
+}
+
+function hasStoredSelectedDevices() {
+	const value = readSetting(SELECTED_DEVICES_SETTING, undefined);
+	return value !== undefined && value !== null && value !== "";
 }
 
 function readSetting(key, fallback) {
