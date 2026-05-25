@@ -66,14 +66,37 @@ Item {
         }
     }
 
-    function refreshUi() {
+    function clearDeviceRows() {
+        for (var i = deviceListColumn.children.length - 1; i >= 0; i--) {
+            deviceListColumn.children[i].visible = false
+            deviceListColumn.children[i].destroy()
+        }
+    }
+
+    function rebuildDeviceRows() {
+        clearDeviceRows()
+
+        for (var i = 0; i < availableDevices.length; i++) {
+            var row = deviceRowComponent.createObject(deviceListColumn, {
+                "deviceInfo": availableDevices[i] || {}
+            })
+
+            if (row === null) {
+                logUi("Failed to create OpenRGB device row " + i + ".")
+            }
+        }
+    }
+
+    function refreshUi(forceRebuild) {
         statusText = readStatus()
         var devicesJson = readDevicesJson()
+        var shouldRebuild = forceRebuild || devicesJson !== lastDevicesJson
         availableDevices = safeJsonParse(devicesJson, [])
         availableDeviceCount = availableDevices.length
 
-        if (devicesJson !== lastDevicesJson) {
+        if (shouldRebuild) {
             lastDevicesJson = devicesJson
+            rebuildDeviceRows()
             logUi("OpenRGB Bridge UI loaded " + availableDeviceCount + " device row(s).")
         }
     }
@@ -105,7 +128,7 @@ Item {
         loadSettings()
         discovery.connectSelectedDevices()
         refreshDevices()
-        refreshUi()
+        refreshUi(true)
     }
 
     Timer {
@@ -113,6 +136,59 @@ Item {
         running: true
         repeat: true
         onTriggered: refreshUi()
+    }
+
+    Component {
+        id: deviceRowComponent
+
+        Rectangle {
+            property var deviceInfo: ({})
+
+            width: deviceListColumn.width
+            height: 54
+            radius: 4
+            color: isSelected(deviceInfo.deviceId) ? "#209e20" : "#212d3a"
+            border.color: "#2e3f4f"
+            border.width: 1
+
+            Column {
+                x: 12
+                y: 7
+                width: parent.width - 24
+                spacing: 2
+
+                Text {
+                    color: "white"
+                    text: String(deviceInfo.name || "OpenRGB Device")
+                    font.pixelSize: 15
+                    font.family: "Poppins"
+                    font.bold: true
+                    width: parent.width
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    color: "#cbd5e1"
+                    text: (deviceInfo.vendor ? String(deviceInfo.vendor) + " | " : "") + "Index " + Number(deviceInfo.openrgbIndex || 0) + " | " + Number(deviceInfo.ledCount || 0) + " LEDs | " + Number(deviceInfo.zoneCount || 0) + " zone(s) | " + String(deviceInfo.deviceId || "")
+                    font.pixelSize: 11
+                    font.family: "Poppins"
+                    width: parent.width
+                    elide: Text.ElideRight
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                hoverEnabled: true
+                onEntered: parent.opacity = 0.85
+                onExited: parent.opacity = 1.0
+                onClicked: {
+                    discovery.toggleDevice(String(parent.deviceInfo.deviceId || ""))
+                    refreshUi(true)
+                }
+            }
+        }
     }
 
     Flickable {
@@ -200,7 +276,7 @@ Item {
                 }
 
                 Rectangle {
-                    width: 130
+                    width: 170
                     height: 32
                     radius: 3
                     border.color: "#444444"
@@ -321,7 +397,7 @@ Item {
                         font.bold: true
                         onClicked: {
                             discovery.removeAllDevices()
-                            refreshUi()
+                            refreshUi(true)
                         }
                     }
                 }
@@ -337,58 +413,10 @@ Item {
                 wrapMode: Text.WordWrap
             }
 
-            Repeater {
-                id: deviceRepeater
-                model: availableDeviceCount
-
-                Rectangle {
-                    property var deviceInfo: deviceAt(index)
-
-                    width: parent.width
-                    height: 54
-                    radius: 4
-                    color: isSelected(deviceInfo.deviceId) ? "#209e20" : "#212d3a"
-                    border.color: "#2e3f4f"
-                    border.width: 1
-
-                    Column {
-                        x: 12
-                        y: 7
-                        width: parent.width - 24
-                        spacing: 2
-
-                        Text {
-                            color: "white"
-                            text: String(deviceInfo.name || "OpenRGB Device")
-                            font.pixelSize: 15
-                            font.family: "Poppins"
-                            font.bold: true
-                            width: parent.width
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            color: "#cbd5e1"
-                            text: (deviceInfo.vendor ? String(deviceInfo.vendor) + " | " : "") + "Index " + Number(deviceInfo.openrgbIndex || 0) + " | " + Number(deviceInfo.ledCount || 0) + " LEDs | " + Number(deviceInfo.zoneCount || 0) + " zone(s) | " + String(deviceInfo.deviceId || "")
-                            font.pixelSize: 11
-                            font.family: "Poppins"
-                            width: parent.width
-                            elide: Text.ElideRight
-                        }
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        hoverEnabled: true
-                        onEntered: parent.opacity = 0.85
-                        onExited: parent.opacity = 1.0
-                        onClicked: {
-                            discovery.toggleDevice(String(deviceInfo.deviceId || ""))
-                            refreshUi()
-                        }
-                    }
-                }
+            Column {
+                id: deviceListColumn
+                width: parent.width
+                spacing: 8
             }
         }
     }
