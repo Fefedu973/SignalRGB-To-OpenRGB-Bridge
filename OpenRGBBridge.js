@@ -30,7 +30,7 @@ const BRIDGE_CONTROLLER_ID = "openrgb-bridge";
 const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/signalbridge.png";
 const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_white/";
 const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
-const REQUEST_TIMEOUT_MS = 3000;
+const REQUEST_TIMEOUT_MS = 10000;
 
 const DeviceTypeIcon = {
 	0: "mainboard",
@@ -553,24 +553,33 @@ export function DiscoveryService() {
 			return "";
 		}
 
+		deviceData.bridgeDeleted = !active;
+
 		let controller = service.getController(deviceData.deviceId);
-		if (controller === undefined) {
+		const isNew = controller === undefined;
+		// Treat a brand new controller as "was deleted" so a new active device announces once.
+		const wasDeleted = isNew ? true : !!controller.bridgeDeleted;
+
+		if (isNew) {
 			controller = new OpenRGBController(deviceData);
-			controller.bridgeDeleted = !active;
 			service.addController(controller);
+		} else if (typeof controller.updateWithValue === "function") {
+			controller.updateWithValue(deviceData);
 		} else {
-			if (typeof controller.updateWithValue === "function") {
-				controller.updateWithValue(deviceData);
-			}
 			controller.bridgeDeleted = !active;
 			service.updateController(controller);
 		}
 
+		// Announce / suppress ONLY on a state transition. Re-announcing an already
+		// announced controller spawns duplicate SignalRGB devices (and the extra render
+		// contexts that make streaming laggy); re-suppressing churns the device list.
 		if (active) {
-			service.announceController(controller);
+			if (isNew || wasDeleted) {
+				service.announceController(controller);
+			}
 		} else {
 			closeRenderState(deviceData.deviceId);
-			if (typeof service.suppressController === "function") {
+			if ((isNew || !wasDeleted) && typeof service.suppressController === "function") {
 				service.suppressController(controller);
 			}
 		}

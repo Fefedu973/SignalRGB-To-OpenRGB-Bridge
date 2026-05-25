@@ -359,7 +359,7 @@ Item {
                             y: 13
                             width: 36
                             height: 36
-                            source: ctrl ? String(ctrl.image || ctrl.icon || "") : ""
+                            source: ctrl ? String(ctrl.icon || ctrl.image || "") : ""
                             fillMode: Image.PreserveAspectFit
                             smooth: true
                         }
@@ -500,7 +500,7 @@ Item {
                             y: 13
                             width: 36
                             height: 36
-                            source: ctrl ? String(ctrl.image || ctrl.icon || "") : ""
+                            source: ctrl ? String(ctrl.icon || ctrl.image || "") : ""
                             fillMode: Image.PreserveAspectFit
                             smooth: true
                         }
