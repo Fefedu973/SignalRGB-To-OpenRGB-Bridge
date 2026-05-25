@@ -115,6 +115,12 @@ Item {
         logUi("OpenRGB Bridge UI active model has " + activeCount + " row(s); deleted model has " + deletedCount + " row(s).")
     }
 
+    function refreshStatusOnly() {
+        statusText = readStatus()
+        busy = readBusy()
+        lastRevision = readRevision()
+    }
+
     function loadSettings() {
         sdkServerIP.text = String(discovery.getHost() || "127.0.0.1")
         sdkServerPort.text = String(discovery.getPort() || "6742")
@@ -129,7 +135,7 @@ Item {
         statusText = "Connect / Refresh clicked. Connecting to " + sdkServerIP.text + ":" + sdkServerPort.text + "..."
         logUi("Connect / Refresh clicked for OpenRGB at " + sdkServerIP.text + ":" + sdkServerPort.text + ".")
         discovery.refresh(sdkServerIP.text, sdkServerPort.text)
-        refreshDeviceLists(true)
+        refreshStatusOnly()
     }
 
     function deleteDevice(deviceId) {
@@ -338,7 +344,7 @@ Item {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     color: theme.primarytextcolor
-                    text: "Devices (" + activeCount + ")"
+                    text: "Devices (" + activeDeviceModel.count + ")"
                     font.pixelSize: 15
                     font.family: "Poppins"
                     font.bold: true
@@ -351,7 +357,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 130
                     height: 30
-                    opacity: busy || activeCount === 0 ? 0.55 : 1
+                    opacity: busy || activeDeviceModel.count === 0 ? 0.55 : 1
 
                     Rectangle {
                         anchors.fill: parent
@@ -361,7 +367,7 @@ Item {
 
                     ToolButton {
                         anchors.fill: parent
-                        enabled: !busy && activeCount > 0
+                        enabled: !busy && activeDeviceModel.count > 0
                         text: "Delete All"
                         font.family: "Poppins"
                         font.bold: true
@@ -374,7 +380,7 @@ Item {
             }
 
             Text {
-                visible: activeCount === 0
+                visible: activeDeviceModel.count === 0
                 color: theme.secondarytextcolor
                 text: "No active OpenRGB devices. Click Connect / Refresh after starting the OpenRGB SDK server, or restore a deleted device below."
                 font.pixelSize: 13
@@ -478,7 +484,7 @@ Item {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     color: theme.primarytextcolor
-                    text: "Deleted Devices (" + deletedCount + ")"
+                    text: "Deleted Devices (" + deletedDeviceModel.count + ")"
                     font.pixelSize: 15
                     font.family: "Poppins"
                     font.bold: true
@@ -491,7 +497,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 130
                     height: 30
-                    opacity: busy || deletedCount === 0 ? 0.55 : 1
+                    opacity: busy || deletedDeviceModel.count === 0 ? 0.55 : 1
 
                     Rectangle {
                         anchors.fill: parent
@@ -501,7 +507,7 @@ Item {
 
                     ToolButton {
                         anchors.fill: parent
-                        enabled: !busy && deletedCount > 0
+                        enabled: !busy && deletedDeviceModel.count > 0
                         text: "Restore All"
                         font.family: "Poppins"
                         font.bold: true
@@ -514,7 +520,7 @@ Item {
             }
 
             Text {
-                visible: deletedCount === 0
+                visible: deletedDeviceModel.count === 0
                 color: theme.secondarytextcolor
                 text: "No deleted OpenRGB devices."
                 font.pixelSize: 13

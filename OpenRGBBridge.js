@@ -26,6 +26,7 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 6742;
 const CLIENT_PROTOCOL_VERSION = 5;
 const CLIENT_NAME = "SignalRGB OpenRGB Bridge";
+const BRIDGE_CONTROLLER_ID = "openrgb-bridge";
 const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/signalbridge.png";
 const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_white/";
 const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
@@ -103,17 +104,20 @@ export function Render() {
 	const state = renderStates[stateKey] || buildSignalRgbLayout(controller);
 	renderStates[stateKey] = state;
 
-	if (!state.customModeSet && client.isReady()) {
-		client.setCustomMode(controller.openrgbIndex);
-		state.customModeSet = true;
+	if (client.isReady()) {
+		setCustomModesForState(client, state);
 	}
 
-	const colors = collectFrameColors(state);
-	const signature = makeFrameSignature(colors);
+	const frames = collectFrameColors(state);
+	for (let i = 0; i < frames.length; i++) {
+		const frame = frames[i];
+		const signature = makeFrameSignature(frame.colors);
+		const signatureKey = String(frame.openrgbIndex);
 
-	if (signature !== state.lastFrameSignature) {
-		client.updateLeds(controller.openrgbIndex, colors);
-		state.lastFrameSignature = signature;
+		if (signature !== state.lastFrameSignatures[signatureKey]) {
+			client.updateLeds(frame.openrgbIndex, frame.colors);
+			state.lastFrameSignatures[signatureKey] = signature;
+		}
 	}
 
 	device.pause(16);
@@ -128,8 +132,10 @@ export function Shutdown() {
 	}
 
 	const rgb = hexToRgb(shutdownColor);
-	const count = getControllerLedCount(controller);
-	renderClient.updateLeds(controller.openrgbIndex, fillColors(count, rgb));
+	const devices = controller.devices || [controller];
+	for (let i = 0; i < devices.length; i++) {
+		renderClient.updateLeds(devices[i].openrgbIndex, fillColors(getControllerLedCount(devices[i]), rgb));
+	}
 	closeRenderClientIfIdle();
 }
 
@@ -203,11 +209,11 @@ export function DiscoveryService() {
 					self.availableDevices = assignStableDeviceIds(devices, host, port);
 					self.availableDeviceSummaries = buildDeviceSummaries(self.availableDevices);
 					saveSetting(LAST_DEVICES_SETTING, JSON.stringify(self.availableDeviceSummaries));
-					const selectedBeforeRefresh = readSelectedDevices();
+					const selectedBeforeRefresh = self.selectedDevices.length > 0 ? self.selectedDevices : readSelectedDevices();
 					self.hasStoredSelectedDevices = self.hasStoredSelectedDevices || hasStoredSelectedDevices();
 					removeStaleControllers(selectedBeforeRefresh, self.availableDevices);
 					self.selectedDevices = self.hasStoredSelectedDevices
-						? getSelectedDeviceSummaries(self.availableDeviceSummaries, selectedBeforeRefresh)
+						? getSelectedDevicesById(self.availableDevices, selectedBeforeRefresh)
 						: self.availableDeviceSummaries.slice(0);
 					saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(self.selectedDevices));
 					self.hasStoredSelectedDevices = true;
@@ -330,8 +336,7 @@ export function DiscoveryService() {
 	};
 
 	this.getActiveDevicesJson = function () {
-		this.selectedDevices = getSelectedDeviceSummaries(this.availableDeviceSummaries, this.selectedDevices);
-		return JSON.stringify(this.selectedDevices);
+		return JSON.stringify(buildDeviceSummaries(this.selectedDevices));
 	};
 
 	this.getSelectedDevicesJson = function () {
@@ -355,7 +360,7 @@ export function DiscoveryService() {
 	};
 
 	this.getDeletedDevicesJson = function () {
-		return JSON.stringify(getDeletedDeviceSummaries(this.availableDeviceSummaries, this.selectedDevices));
+		return JSON.stringify(getDeletedDeviceSummaries(this.availableDeviceSummaries, buildDeviceSummaries(this.selectedDevices)));
 	};
 
 	this.isDeviceSelected = function (deviceId) {
@@ -395,7 +400,7 @@ export function DiscoveryService() {
 			return this.status;
 		}
 
-		this.selectedDevices = getSelectedDeviceSummaries(this.availableDeviceSummaries, this.selectedDevices.concat([deviceData]));
+		this.selectedDevices = getSelectedDevicesById(this.availableDevices, this.selectedDevices.concat([deviceData]));
 		this.saveSelection();
 		this.syncControllers();
 		this.setStatus("Added " + deviceData.name + ".");
@@ -423,13 +428,13 @@ export function DiscoveryService() {
 
 	this.restoreDevice = function (deviceId) {
 		deviceId = String(deviceId || "");
-		const deviceData = findDeviceSummaryById(this.availableDeviceSummaries, deviceId);
+		const deviceData = findDeviceById(this.availableDevices, deviceId);
 		if (!deviceData) {
 			this.setStatus("Could not restore device. Click Connect / Refresh to reload OpenRGB devices.");
 			return this.status;
 		}
 
-		this.selectedDevices = getSelectedDeviceSummaries(this.availableDeviceSummaries, this.selectedDevices.concat([deviceData]));
+		this.selectedDevices = getSelectedDevicesById(this.availableDevices, this.selectedDevices.concat([deviceData]));
 		this.saveSelection();
 		this.syncControllers();
 		this.setStatus("Restored " + deviceData.name + ".");
@@ -437,7 +442,7 @@ export function DiscoveryService() {
 	};
 
 	this.restoreAllDevices = function () {
-		this.selectedDevices = this.availableDeviceSummaries.slice(0);
+		this.selectedDevices = this.availableDevices.slice(0);
 		this.saveSelection();
 		this.syncControllers();
 		this.setStatus("Restored all OpenRGB devices.");
@@ -451,31 +456,23 @@ export function DiscoveryService() {
 	};
 
 	this.saveSelection = function () {
-		this.selectedDevices = getSelectedDeviceSummaries(this.availableDeviceSummaries, this.selectedDevices);
+		this.selectedDevices = getSelectedDevicesById(this.availableDevices, this.selectedDevices);
 		saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(this.selectedDevices));
 		this.hasStoredSelectedDevices = true;
 		this.bumpRevision();
 	};
 
 	this.syncControllers = function () {
-		const selectedIds = getDeviceIds(this.selectedDevices);
-		const availableIds = getDeviceIds(this.availableDeviceSummaries);
+		removeLegacyOpenRgbControllers(this.availableDeviceSummaries.concat(buildDeviceSummaries(readSelectedDevices())));
 
-		for (let i = 0; i < availableIds.length; i++) {
-			const deviceId = availableIds[i];
-			if (selectedIds.indexOf(deviceId) >= 0) {
-				continue;
+		if (this.selectedDevices.length === 0) {
+			closeRenderState(BRIDGE_CONTROLLER_ID);
+			const bridgeToRemove = service.getController(BRIDGE_CONTROLLER_ID);
+			if (bridgeToRemove !== undefined) {
+				service.removeController(bridgeToRemove);
 			}
-
-			closeRenderState(deviceId);
-			const controllerToRemove = service.getController(deviceId);
-			if (controllerToRemove !== undefined) {
-				service.removeController(controllerToRemove);
-			}
-		}
-
-		for (let i = 0; i < this.selectedDevices.length; i++) {
-			this.addOrUpdateController(this.selectedDevices[i]);
+		} else {
+			this.addOrUpdateController(new OpenRGBBridgeController(this.selectedDevices));
 		}
 
 		this.bumpRevision();
@@ -486,7 +483,9 @@ export function DiscoveryService() {
 			return "";
 		}
 
-		const openRgbController = new OpenRGBController(deviceData);
+		const openRgbController = deviceData instanceof OpenRGBBridgeController
+			? deviceData
+			: new OpenRGBBridgeController([deviceData]);
 		if (typeof service.hasController === "function" && service.hasController(deviceData.deviceId)) {
 			service.updateController(openRgbController);
 			return deviceData.deviceId;
@@ -568,6 +567,38 @@ class OpenRGBController {
 		this.zones = deviceData.zones || this.zones;
 		this.leds = deviceData.leds || this.leds;
 		this.colors = deviceData.colors || this.colors;
+		service.updateController(this);
+	}
+}
+
+class OpenRGBBridgeController {
+	constructor(devices) {
+		this.id = BRIDGE_CONTROLLER_ID;
+		this.deviceId = BRIDGE_CONTROLLER_ID;
+		this.openrgbHost = devices && devices.length > 0 ? devices[0].openrgbHost : readSetting(HOST_SETTING, DEFAULT_HOST);
+		this.openrgbPort = devices && devices.length > 0 ? devices[0].openrgbPort : readNumberSetting(PORT_SETTING, DEFAULT_PORT);
+		this.name = "OpenRGB Bridge";
+		this.vendor = "OpenRGB";
+		this.description = "SignalRGB bridge for selected OpenRGB SDK devices";
+		this.version = Version();
+		this.serial = BRIDGE_CONTROLLER_ID;
+		this.location = this.openrgbHost + ":" + this.openrgbPort;
+		this.type = 19;
+		this.activeMode = 0;
+		this.modes = [];
+		this.zones = [];
+		this.leds = [];
+		this.colors = [];
+		this.icon = ICON_URL;
+		this.image = ICON_URL;
+		this.devices = devices || [];
+	}
+
+	updateWithValue(deviceData) {
+		this.openrgbHost = deviceData.openrgbHost || this.openrgbHost;
+		this.openrgbPort = deviceData.openrgbPort || this.openrgbPort;
+		this.devices = deviceData.devices || this.devices;
+		this.location = this.openrgbHost + ":" + this.openrgbPort;
 		service.updateController(this);
 	}
 }
@@ -933,11 +964,7 @@ function ensureRenderClient(controllerData, logger) {
 					continue;
 				}
 
-				const state = renderStates[stateKey];
-				if (state && state.openrgbIndex !== undefined) {
-					client.setCustomMode(state.openrgbIndex);
-					state.customModeSet = true;
-				}
+				setCustomModesForState(client, renderStates[stateKey]);
 			}
 		},
 		onDeviceListUpdated: function () {
@@ -967,13 +994,40 @@ function closeRenderClientIfIdle() {
 	}
 }
 
+function setCustomModesForState(client, state) {
+	if (!client || !client.isReady() || !state) {
+		return;
+	}
+
+	if (state.frames && state.frames.length > 0) {
+		for (let i = 0; i < state.frames.length; i++) {
+			const frame = state.frames[i];
+			if (!frame.customModeSet && frame.openrgbIndex !== undefined) {
+				client.setCustomMode(frame.openrgbIndex);
+				frame.customModeSet = true;
+			}
+		}
+		return;
+	}
+
+	if (!state.customModeSet && state.openrgbIndex !== undefined) {
+		client.setCustomMode(state.openrgbIndex);
+		state.customModeSet = true;
+	}
+}
+
 function buildSignalRgbLayout(controllerData) {
+	if (controllerData.devices && controllerData.devices.length > 0) {
+		return buildBridgeSignalRgbLayout(controllerData);
+	}
+
 	const zones = controllerData.zones || [];
 	const state = {
 		openrgbIndex: controllerData.openrgbIndex,
 		customModeSet: false,
 		ledPositions: [],
 		subdeviceMaps: [],
+		lastFrameSignatures: {},
 		lastFrameSignature: ""
 	};
 
@@ -1009,6 +1063,63 @@ function buildSignalRgbLayout(controllerData) {
 	device.setSize([map.width, map.height]);
 	device.setControllableLeds(map.names, map.positions);
 	return state;
+}
+
+function buildBridgeSignalRgbLayout(controllerData) {
+	const state = {
+		frames: [],
+		lastFrameSignatures: {}
+	};
+
+	const devices = controllerData.devices || [];
+	for (let deviceIndex = 0; deviceIndex < devices.length; deviceIndex++) {
+		const openRgbDevice = devices[deviceIndex];
+		const frame = {
+			openrgbIndex: openRgbDevice.openrgbIndex,
+			ledCount: getControllerLedCount(openRgbDevice),
+			customModeSet: false,
+			maps: []
+		};
+
+		const zones = openRgbDevice.zones || [];
+		if (zones.length > 1) {
+			let ledOffset = 0;
+			for (let zoneIndex = 0; zoneIndex < zones.length; zoneIndex++) {
+				const zone = zones[zoneIndex];
+				const map = buildZoneLedMap(openRgbDevice, zone, ledOffset);
+				ledOffset += map.count;
+				appendBridgeSubdevice(controllerData, openRgbDevice, zone.name || ("Zone " + (zoneIndex + 1)), map, frame);
+			}
+		} else {
+			const zone = zones.length === 1 ? zones[0] : { type: 1, ledsCount: getControllerLedCount(openRgbDevice) };
+			const map = buildZoneLedMap(openRgbDevice, zone, 0);
+			appendBridgeSubdevice(controllerData, openRgbDevice, openRgbDevice.name || ("OpenRGB Device " + (deviceIndex + 1)), map, frame);
+		}
+
+		if (frame.maps.length > 0) {
+			state.frames.push(frame);
+		}
+	}
+
+	device.SetIsSubdeviceController(true);
+	return state;
+}
+
+function appendBridgeSubdevice(bridgeController, openRgbDevice, label, map, frame) {
+	if (!map || map.count <= 0) {
+		return;
+	}
+
+	const subdeviceId = bridgeController.id + "_" + sanitizeId(openRgbDevice.deviceId) + "_" + sanitizeId(label);
+	const subdeviceName = openRgbDevice.name === label ? label : ((openRgbDevice.name || "OpenRGB Device") + " - " + label);
+	device.createSubdevice(subdeviceId);
+	device.setSubdeviceName(subdeviceId, subdeviceName);
+	device.setSubdeviceSize(subdeviceId, map.width, map.height);
+	device.setSubdeviceLeds(subdeviceId, map.names, map.x, map.y);
+	frame.maps.push({
+		id: subdeviceId,
+		positions: map.positions
+	});
 }
 
 function buildZoneLedMap(controllerData, zone, ledOffset) {
@@ -1048,9 +1159,32 @@ function buildZoneLedMap(controllerData, zone, ledOffset) {
 }
 
 function collectFrameColors(state) {
-	let colors = [];
 	const renderState = state || { ledPositions: [], subdeviceMaps: [] };
 
+	if (renderState.frames && renderState.frames.length > 0) {
+		const frames = [];
+		for (let frameIndex = 0; frameIndex < renderState.frames.length; frameIndex++) {
+			const frame = renderState.frames[frameIndex];
+			let frameColors = [];
+			for (let mapIndex = 0; mapIndex < frame.maps.length; mapIndex++) {
+				const map = frame.maps[mapIndex];
+				for (let positionIndex = 0; positionIndex < map.positions.length; positionIndex++) {
+					const position = map.positions[positionIndex];
+					frameColors.push(resolveColor(function () {
+						return device.subdeviceColor(map.id, position[0], position[1]);
+					}));
+				}
+			}
+
+			if (frame.ledCount > 0) {
+				frameColors = normalizeColorCount(frameColors, frame.ledCount);
+			}
+			frames.push({ openrgbIndex: frame.openrgbIndex, colors: frameColors });
+		}
+		return frames;
+	}
+
+	let colors = [];
 	if (renderState.subdeviceMaps.length > 0) {
 		for (let i = 0; i < renderState.subdeviceMaps.length; i++) {
 			const map = renderState.subdeviceMaps[i];
@@ -1074,7 +1208,7 @@ function collectFrameColors(state) {
 		colors = normalizeColorCount(colors, targetCount);
 	}
 
-	return colors;
+	return [{ openrgbIndex: controller.openrgbIndex, colors: colors }];
 }
 
 function resolveColor(canvasReader) {
@@ -1462,6 +1596,28 @@ function getSelectedDeviceSummaries(availableDevices, selectedDevices) {
 	return output;
 }
 
+function getSelectedDevicesById(availableDevices, selectedDevices) {
+	const selectedIds = getDeviceIds(selectedDevices || []);
+	if (selectedIds.length === 0) {
+		return [];
+	}
+
+	if (!availableDevices || availableDevices.length === 0) {
+		const output = [];
+		appendDeviceSummaries(output, selectedDevices || []);
+		return output;
+	}
+
+	const output = [];
+	for (let i = 0; i < availableDevices.length; i++) {
+		const item = availableDevices[i];
+		if (item && selectedIds.indexOf(item.deviceId) >= 0) {
+			output.push(item);
+		}
+	}
+	return output;
+}
+
 function getDeletedDeviceSummaries(availableDevices, selectedDevices) {
 	const selectedIds = getDeviceIds(selectedDevices || []);
 	const output = [];
@@ -1578,6 +1734,22 @@ function removeStaleControllers(previousDevices, currentDevices) {
 	}
 }
 
+function removeLegacyOpenRgbControllers(devices) {
+	const deviceIds = getDeviceIds(devices || []);
+	for (let i = 0; i < deviceIds.length; i++) {
+		const deviceId = deviceIds[i];
+		if (!deviceId || deviceId === BRIDGE_CONTROLLER_ID) {
+			continue;
+		}
+
+		closeRenderState(deviceId);
+		const controllerToRemove = service.getController(deviceId);
+		if (controllerToRemove !== undefined) {
+			service.removeController(controllerToRemove);
+		}
+	}
+}
+
 function findMatrixPosition(matrix, ledIndex) {
 	for (let row = 0; row < matrix.length; row++) {
 		for (let col = 0; col < matrix[row].length; col++) {
@@ -1611,6 +1783,10 @@ function getZoneLedCount(zone) {
 }
 
 function getControllerLedCount(controllerData) {
+	if (controllerData.ledCount !== undefined) {
+		return Number(controllerData.ledCount || 0);
+	}
+
 	if (controllerData.colors && controllerData.colors.length > 0) {
 		return controllerData.colors.length;
 	}
