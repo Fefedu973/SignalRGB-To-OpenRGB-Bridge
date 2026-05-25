@@ -138,7 +138,7 @@ Item {
         for (var i = 0; i < devices.length; i++) {
             var item = devices[i] || {}
             var deviceId = String(item.deviceId || "")
-            if (deviceId === "" || activeIds.indexOf(deviceId) >= 0) {
+            if (deviceId === "") {
                 continue
             }
 
