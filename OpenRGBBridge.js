@@ -33,7 +33,7 @@ const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenR
 const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_white/";
 const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
 const REQUEST_TIMEOUT_MS = 10000;
-const DISCOVERY_REQUEST_TIMEOUT_MS = 30000;
+const DISCOVERY_REQUEST_TIMEOUT_MS = 60000;
 
 const DeviceTypeIcon = {
 	0: "mainboard",
@@ -1018,7 +1018,6 @@ class OpenRGBClient {
 
 			const devices = [];
 			const failed = [];
-			let remaining = count;
 			let received = 0;
 			self.onProgress("OpenRGB reported " + count + " controller(s).");
 
@@ -1027,12 +1026,7 @@ class OpenRGBClient {
 				return;
 			}
 
-			const finishOne = function () {
-				remaining--;
-				if (remaining > 0) {
-					return;
-				}
-
+			const finish = function () {
 				if (failed.length > 0) {
 					self.logger("Gave up on " + failed.length + " OpenRGB controller(s): " + failed.join(", "));
 				}
@@ -1043,9 +1037,13 @@ class OpenRGBClient {
 				callback(devices);
 			};
 
-			self.onProgress("Requesting OpenRGB data for " + count + " controller(s)...");
-			for (let i = 0; i < count; i++) {
-				const index = i;
+			const readNext = function (index) {
+				if (index >= count) {
+					finish();
+					return;
+				}
+
+				self.onProgress("Reading OpenRGB controller " + (index + 1) + "/" + count + "...");
 				self.getControllerData(index, function (controllerData, error) {
 					if (error) {
 						self.logger("OpenRGB controller " + index + " read failed: " + error);
@@ -1055,9 +1053,11 @@ class OpenRGBClient {
 						received++;
 						self.onProgress("Read OpenRGB controller " + (index + 1) + "/" + count + " (" + received + "/" + count + " received)...");
 					}
-					finishOne();
+					readNext(index + 1);
 				}, DISCOVERY_REQUEST_TIMEOUT_MS);
-			}
+			};
+
+			readNext(0);
 		});
 	}
 
