@@ -51,6 +51,7 @@ Item {
     Component.onCompleted: {
         loadSettings()
         discovery.connectSelectedDevices()
+        refreshDevices()
         refreshUi()
     }
 
@@ -92,7 +93,7 @@ Item {
 
             Text {
                 color: theme.secondarytextcolor
-                text: "Start OpenRGB, enable Settings > General Settings > Start Server, then connect to the SDK server below. The default OpenRGB SDK endpoint is 127.0.0.1:6742."
+                text: "Start OpenRGB, enable Settings > General Settings > Start Server, then use Connect / Refresh to load the current OpenRGB device list. Rescan OpenRGB asks OpenRGB to detect hardware again and should only be used after hardware/layout changes."
                 font.pixelSize: 13
                 font.family: "Poppins"
                 width: parent.width
@@ -146,7 +147,7 @@ Item {
                 }
 
                 Rectangle {
-                    width: 70
+                    width: 90
                     height: 32
                     radius: 3
                     border.color: "#444444"
@@ -173,7 +174,7 @@ Item {
                 }
 
                 Item {
-                    width: 130
+                    width: 170
                     height: 32
 
                     Rectangle {
@@ -184,7 +185,7 @@ Item {
 
                     ToolButton {
                         anchors.fill: parent
-                        text: "Refresh"
+                        text: "Connect / Refresh"
                         font.family: "Poppins"
                         font.bold: true
                         onClicked: refreshDevices()
@@ -192,7 +193,7 @@ Item {
                 }
 
                 Item {
-                    width: 130
+                    width: 150
                     height: 32
 
                     Rectangle {
@@ -203,7 +204,7 @@ Item {
 
                     ToolButton {
                         anchors.fill: parent
-                        text: "Rescan"
+                        text: "Rescan OpenRGB"
                         font.family: "Poppins"
                         font.bold: true
                         onClicked: {

@@ -121,6 +121,10 @@ export function DiscoveryService() {
 	};
 
 	this.Update = function () {
+		if (this.client) {
+			this.client.checkRequestTimeouts();
+		}
+
 		if (this.firstUpdate) {
 			this.firstUpdate = false;
 			this.connectSelectedDevices();
@@ -160,12 +164,14 @@ export function DiscoveryService() {
 			onError: function (message) {
 				self.setStatus(message);
 			},
+			onProgress: function (message) {
+				self.setStatus(message);
+			},
 			onDisconnected: function () {
 				self.setStatus("Disconnected from OpenRGB.");
 			},
 			onDeviceListUpdated: function () {
-				self.setStatus("OpenRGB device list changed. Refreshing...");
-				self.refresh(host, port);
+				self.setStatus("OpenRGB device list changed. Click Connect / Refresh to reload it.");
 			}
 		});
 
@@ -175,14 +181,18 @@ export function DiscoveryService() {
 	this.rescan = function () {
 		if (this.client && this.client.isReady()) {
 			this.client.requestRescanDevices();
-			this.setStatus("Requested an OpenRGB device rescan.");
+			this.setStatus("Requested an OpenRGB device rescan. Wait a moment, then click Connect / Refresh.");
 			return;
 		}
 
-		this.refresh(readSetting(HOST_SETTING, DEFAULT_HOST), readNumberSetting(PORT_SETTING, DEFAULT_PORT));
+		this.setStatus("Connect to OpenRGB before requesting a rescan.");
 	};
 
 	this.getStatus = function () {
+		if (this.client) {
+			this.client.checkRequestTimeouts();
+		}
+
 		return this.status || readSetting(STATUS_SETTING, "Idle");
 	};
 
@@ -338,6 +348,7 @@ class OpenRGBClient {
 		this.logger = options.logger || function () {};
 		this.onReady = options.onReady || function () {};
 		this.onError = options.onError || function () {};
+		this.onProgress = options.onProgress || this.logger;
 		this.onDisconnected = options.onDisconnected || function () {};
 		this.onDeviceListUpdated = options.onDeviceListUpdated || function () {};
 		this.socket = undefined;
@@ -503,6 +514,7 @@ class OpenRGBClient {
 		const request = {
 			commandId: commandId,
 			deviceId: deviceId || 0,
+			timeoutAt: Date.now() + REQUEST_TIMEOUT_MS,
 			callback: callback || function () {}
 		};
 
@@ -521,6 +533,26 @@ class OpenRGBClient {
 
 		this.pending.push(request);
 		this.sendPacket(commandId, payload || [], deviceId || 0);
+	}
+
+	checkRequestTimeouts() {
+		if (!this.pending || this.pending.length === 0) {
+			return;
+		}
+
+		const now = Date.now();
+		for (let i = this.pending.length - 1; i >= 0; i--) {
+			const request = this.pending[i];
+			if (request.timeoutAt > now) {
+				continue;
+			}
+
+			this.pending.splice(i, 1);
+			if (request.timeoutId !== undefined) {
+				clearTimeout(request.timeoutId);
+			}
+			request.callback(undefined, "OpenRGB request timed out: command " + request.commandId + " device " + request.deviceId);
+		}
 	}
 
 	sendPacket(commandId, payload, deviceId) {
@@ -579,17 +611,18 @@ class OpenRGBClient {
 			}
 
 			const devices = [];
-			self.logger("OpenRGB reported " + count + " controller(s).");
+			self.onProgress("OpenRGB reported " + count + " controller(s).");
 			const loadNext = function (index) {
 				if (index >= count) {
 					callback(devices);
 					return;
 				}
 
-				self.logger("Reading OpenRGB controller " + (index + 1) + "/" + count + "...");
+				self.onProgress("Reading OpenRGB controller " + (index + 1) + "/" + count + "...");
 				self.getControllerData(index, function (controllerData, error) {
 					if (error) {
-						callback([], error);
+						self.logger("Skipping OpenRGB controller " + index + ": " + error);
+						loadNext(index + 1);
 						return;
 					}
 
