@@ -1,9 +1,9 @@
 {
-  "dependencies": {
-    "auto-launch": "^5.0.6",
-    "express": "^4.18.2",
-    "node-hide-console-window": "^2.2.0",
-    "openrgb-sdk": "^0.5.2",
-    "ps-list": "^8.1.1"
+  "name": "signalrgb-to-openrgb-bridge",
+  "version": "2.0.0",
+  "private": true,
+  "description": "SignalRGB addon that controls OpenRGB SDK devices directly over TCP.",
+  "scripts": {
+    "validate": "node tools/validate-openrgb-codec.js"
   }
 }

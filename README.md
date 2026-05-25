@@ -1,88 +1,136 @@
 # SignalRGB To OpenRGB Bridge
-An add-on for signalRGB that allows to control OpenRGB Devices
-This plugin allows you for exemple to make Nvidia Founder Editions graphics cards compatible with signalRGB !. It also remove the lag with the G915 keyboard. but it's not limited to those devices, it support all devices supported by OpenRGB ! (you can use this plugin to fill in the gabs of supported devices by signalRGB in your setup). ⚠️ This plugin does not bring the support of all devices to signalRGB  but only the devices supported by openRGB in the first place.
 
-[![Click here to add this repo to SignalRGB](https://github.com/SRGBmods/qmk-plugins/blob/main/_images/add-to-signalrgb.png)](https://srgbmods.net/s?p=addon/install?url=https://github.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge)
+SignalRGB To OpenRGB Bridge is a SignalRGB addon that exposes devices supported by [OpenRGB](https://openrgb.org/) as controllable SignalRGB devices.
 
-## What is working Right now ?
-- Device from OpenRGB sync with SignalRGB
-- Multiple zones control support 
-- Multiple Device Support
-- Independent LED control support
-- Custom shaped devices support 
+Use it to fill support gaps in your setup: GPUs, keyboards, LED controllers, motherboard headers, custom Visual Map layouts, or any other device that works in OpenRGB but is not currently supported directly by SignalRGB.
 
-## TODO:
-- Device sepcific controls
-- Get rid of the stupid node js server
-- Sync shutdown color from signalRGB to openRGB
+[![Add To Installation](https://marketplace.signalrgb.com/resources/add-extension-256.png "Add to My SignalRGB Installation")](signalrgb://addon/install?url=https://github.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge)
 
-## Known Issues
-- There isn't any known issues rigth now
-## SETUP INSTRUCTIONS
+## Features
 
-### Install and configure OpenRGB (only the first time)
-- Download OpenRGB [here](https://openrgb.org/releases.html).
-- Extract the zip file and put the extracted files in your programm folder
-- Launch OpenRGB.exe
-- Go into Settings -> General Settings and enable:
-  - Minimize On Close
-  - Start At Login
-  - Start Minimized
-  - Start Server
-- Then go into the SDK Server Tab
-- Click on "Start Server" (you can change the Host and the Port if you want/need but I don't recommend to do that)
-- Then we are going to create a "shutdown profile". This will allow signalRGB to support changing the shutdown color of your devices (colors that are set when you close SignalRGB or your computer.) You need to do that because when trying applying the last color of shutdown color directly when using the signalRGB feature the intermediary server and openRGB were already closed when turning the computer off, this means that the shutdown color wasn't applied. If you change the shutdown color in SignalRGB it won't be synced with your shudown profile that we are going to create for now. The signalRGB shutdown color as you configured in signalRGB will only work if you close SignalRGB because openRGB and the intermediary server are not closed during this process. This means that for now the shutdown color when shuting your computer down config and implementation is managed by openRGB not signalRGB and their settings are not synced. hope it's clear lol.
-   - Click on the little arrow on the right of the the "Save Profile" button
-   - In the "Create a new profile" field please insert this EXACT name "shutdown-profile"
-   - In the settings -> General Settings scroll to the bottom and enable the "Load Profile" option and set it to the default profile.
-   - Enable "Set Profile on Exit" and select the "shutdown-profile" profile
-   - Edit the shutdown profile to match the lightning you want on shutdown. Don't forget to save it
-- Make sure to disable devices that you don't need openRGB to control by going into Settings -> Supported Devices and searching for the devices that shows up in openRGB you don't want and un-ticking them. Make sure to click "Apply changes" and to restart OpenRGB after that
-#### Optionnal: Install the OpenRGB Visual Map Plugin (if you want to customize the LED position of your device)
-- Download The OpenRGB Visual Map Plugin [here](https://openrgb.org/plugins.html).
-- Extract the zip file
-- Launch OpenRGB and go into Settings -> Plugins and click on Install Plugin
-- In the file selector navigate to you uncompressed folder and select "OpenRGBVisualMapPlugin.dll"
-- See the configure device layout section before continuing the setup
+- Sync OpenRGB devices with the current SignalRGB canvas and effects.
+- Select only the OpenRGB devices you want SignalRGB to control.
+- Multiple OpenRGB devices can be used at the same time.
+- Per-LED color streaming is supported when the OpenRGB device supports Direct/Custom mode.
+- Multi-zone and matrix devices are exposed as SignalRGB subdevices.
+- Custom shapes from the OpenRGB Visual Map Plugin can be selected and controlled.
+- Large LED devices are sent over binary TCP packets instead of HTTP URLs.
+- OpenRGB SDK protocol versions up to v5 are supported.
 
-### Install and configure the plugin for SignalRGB
-- Click on the "Add to SignalRGB" Button
-- Accept opening the link with SignalRGB
-- In the SignalRGB app click on "confirm" in the install add-on dialog
-- Wait for the plugin to download
-- Press the "Windows" + "R" keys and paste this URL "%localappdata%\WhirlwindFX\SignalRgb\cache\addons"
-- Head into the last modified folder
-- Launch "server.exe"
-- Click on "Allow" in the Windows Security firewall dialog box
-- Then restart SignalRGB (right click on tray icon -> restart)
-- Go into "Network" and click on "OpenRGB Bridge"
-- Fill the SDK Server IP and Port Field (They are the values that were configured when starting the OpenRGB SDK Server, by default you should put 127.0.0.1 in the Server IP field and 6742 in the Port field)
-- Then Click on "Connect"
-- You will see a list of devices, Click on the devices you want to control using my plugin through OpenRGB that are not yet supported by SignalRGB
-- The device you selected should light up according to your selected effect in SignalRGB, you can now move it across the layout and your configuration should be done. If it's working please don't touch anything after that.
-- If in the meantime new devices are detected by OpenRGB, if the device order is changed in OpenRGB or if you change device settings or layout (using the visual map plugin) please press the "Delete All" button and re-select the devices you want to control
+This addon does not add native SignalRGB support for every RGB device. It can only control devices that OpenRGB already detects and supports.
 
-### Configure the Intermediary Server (Optionnal)
-You can change many settings for the intermediary server in order to suits your needs. Here is the list of what you can do.
-- You can change the server port if you want or if it is aleready used by adding "--port=${THE PORT YOU WANT}" to the file name
-   - Make sure to tick the "Use a custom port for the intermediate server" checkbox in my plugin page inside SiganRGB and enter the port you choosed for your server
-- You can prevent the server for starting with windows by adding "--no-startup" to the filename (note that you will need to manually start it when you start SignalRGB)
-- If you have issue with my plugin you can check the logs of the server by adding "--console" to the filename. This will show the console on next server startup. Please make sure to remove it if you don't want that anymore. You can also check logs in my plugin config page in SignalRGB by enabling "shoow console" and in each device by clicking on the device that is not working in the devices page, then go into the question mark tab and enable Show console. If you have issue please head into the [Signal RGB Plugin Test server](https://discord.gg/Bn4q4h9QCH) and leave a message here and tag me (Fefe_du_973) or open an issue on the github
-You can of course enbale multiple settings at the same time. Use it as you want !
-- If you nned to stop/restart the server you need to stop the server process in the task manager (search for node.js javascript runtime) and start it again manually
+## Requirements
 
-### Configure the Device LED Layout in OpenRGB (Optionnal)
-- If you have device that have a special shape (eg: for exemple fans are round but signal rgb don't know their shape so the effects are going to be applied as there were a straight line.
-  - For some devices you may need to manually add the number of leds your device has (for motherboard rgb header for exemple) by selecting the zone you want in OpenRGB and selecting edit and the enter the number of led your device has. See the OpenRGB documentation to see if your device is supported or if you have any questions.
-- To edit the LED postion head into the Visual Map tab.
-- On the left you will see the list of your device. Click on the + sign to add the device you want to edit the shape on the grid, then click "auto resize"
-- Click on the checkmark icon of the device you added and make a custom shape by selecting shape -> custom and then on "Edit Shape"
-- Inside the new popup window you can do pre-defined shapes or you can drag each led arround individually to make the shpae you want that that will match your device
-- Once done click on "auto resize" and on "save"
-- In the main window click on "auto resize"
-- Your device modifications are ready to be saved now !
-- Click on "Vmap menu" and hit "save" set the name to match your device name and add "custom shape" to it and click "ok" and click another time on Vmap Meanu and tick "register controller"
-- Go back into the "Devices" tab and you should see a new device. It is in fact the same device as the device you've just modified but with the new led positions as the plugin cannot direclty edit the main device led position
-- Now you can continue the setup process. But make sure when it's going to be the time of connecting your device with SignalRGB to select the device with the custom shape and not the normal one.
+- SignalRGB with addon TCP/network module support.
+- OpenRGB installed and running.
+- The OpenRGB SDK server enabled.
 
-## Please open an issue if you have any issue or suggestions !
+Default OpenRGB SDK endpoint:
+
+```text
+Host: 127.0.0.1
+Port: 6742
+```
+
+## Installation
+
+1. Click the `Add To Installation` button above.
+2. Accept the SignalRGB install prompt.
+3. Open SignalRGB.
+4. Go to `Third Party Services`.
+5. Open `OpenRGB Bridge`.
+6. Start OpenRGB and make sure the SDK server is online.
+7. In the addon UI, keep `127.0.0.1:6742` unless you changed OpenRGB's SDK host or port.
+8. Click `Refresh`.
+9. Select the OpenRGB devices you want to control from SignalRGB.
+
+Selected devices are saved and re-added on the next SignalRGB launch.
+
+## OpenRGB Setup
+
+Install OpenRGB from the [official releases page](https://openrgb.org/releases.html), then configure it before using the addon:
+
+1. Launch OpenRGB.
+2. Open `Settings > General Settings`.
+3. Enable `Start Server`.
+4. Optional, but recommended: enable `Start at Login`, `Start Minimized`, and `Minimize On Close`.
+5. Open the `SDK Server` tab and confirm the server is online.
+6. Disable any devices you do not want OpenRGB to control in `Settings > Supported Devices`, then apply changes and restart OpenRGB if needed.
+
+## Custom LED Layouts
+
+For devices with unusual LED positions, such as fans, strips, headers, or non-rectangular devices, use the [OpenRGB Visual Map Plugin](https://openrgb.org/plugins.html).
+
+Recommended flow:
+
+1. Install the OpenRGB Visual Map Plugin from OpenRGB's plugin page.
+2. Open the Visual Map tab in OpenRGB.
+3. Add the device you want to reshape.
+4. Use `Auto Resize`, then edit the shape or LED positions.
+5. Save the visual map.
+6. Register the mapped controller.
+7. Return to the addon, click `Refresh`, and select the mapped controller instead of the original one.
+
+If you change OpenRGB device order, add new devices, or change Visual Map layouts, click `Delete All` in the addon and select your devices again.
+
+## Shutdown Color
+
+The addon can send SignalRGB's shutdown color while SignalRGB and OpenRGB are still running. During a full PC shutdown, Windows may close SignalRGB, OpenRGB, or the SDK connection before the final color packet is sent.
+
+For reliable power-off lighting, configure an OpenRGB shutdown profile:
+
+1. In OpenRGB, create a profile named `shutdown-profile`.
+2. Configure it with the lighting you want after shutdown.
+3. In `Settings > General Settings`, enable `Set Profile on Exit`.
+4. Select `shutdown-profile`.
+5. Save the profile.
+
+This OpenRGB profile is independent from SignalRGB's shutdown color setting.
+
+## How It Works
+
+The addon implements the OpenRGB SDK protocol directly in `OpenRGBBridge.js`. It connects to the SDK server, reads controller data, registers selected controllers in SignalRGB, switches devices to Custom/Direct mode when possible, and sends `UPDATELEDS` packets during rendering.
+
+Device identity is based on OpenRGB metadata such as vendor, name, serial, and location. If OpenRGB exposes identical devices without stable serial/location data, you may need to reselect them after the OpenRGB device list changes.
+
+## Troubleshooting
+
+### I do not see a "Network" section in SignalRGB
+
+Recent SignalRGB versions show addons like this under `Third Party Services`.
+
+### No devices appear
+
+- Confirm OpenRGB is running.
+- Confirm the OpenRGB SDK server is enabled and online.
+- Confirm the host and port in the addon match the OpenRGB SDK Server tab.
+- Click `Refresh`.
+- If OpenRGB recently detected new devices, click `Rescan`, then `Refresh`.
+
+### Devices appear but colors do not change
+
+- Make sure no other RGB software is controlling the same device.
+- Make sure the device supports Direct or Custom mode in OpenRGB.
+- Try `Delete All`, then select the device again.
+- Check the SignalRGB plugin console for OpenRGB TCP errors.
+
+### Colors freeze or devices stop matching
+
+OpenRGB can change controller indexes after devices are added, removed, disabled, or remapped. Click `Delete All`, then `Refresh`, and select the devices again.
+
+## Development
+
+This repository is a SignalRGB addon. The important files are:
+
+- `OpenRGBBridge.js`: addon runtime, OpenRGB TCP client, codec, discovery, and rendering.
+- `OpenRGBBridge.qml`: settings UI.
+- `signalbridge.png`: addon image asset.
+- `tools/validate-openrgb-codec.js`: packet encoder validation.
+
+No `node_modules` directory or generated server binary should be committed.
+
+Run the local codec check with:
+
+```bash
+npm run validate
+```

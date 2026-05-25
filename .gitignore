@@ -1,0 +1,9 @@
+.history/
+node_modules/
+dist/
+build/
+coverage/
+*.log
+*.exe
+*.ico
+package-lock.json
