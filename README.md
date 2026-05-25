@@ -89,7 +89,9 @@ This OpenRGB profile is independent from SignalRGB's shutdown color setting.
 
 ## How It Works
 
-The addon implements the OpenRGB SDK protocol directly in `OpenRGBBridge.js`. It connects to the SDK server, reads controller data, registers selected controllers in SignalRGB, switches devices to Custom/Direct mode when possible, and sends `UPDATELEDS` packets during rendering.
+The addon implements the OpenRGB SDK protocol directly in `OpenRGBBridge.js`. It connects to the SDK server, reads controller data, registers selected controllers in SignalRGB, sends OpenRGB's `SETCUSTOMMODE` command for controlled devices, and sends `UPDATELEDS` packets during rendering.
+
+The addon does not pick a mode by name from the device mode list. It uses the SDK `SETCUSTOMMODE` command, which asks OpenRGB to put the target controller in its SDK-controlled Custom/Direct mode when the device supports it.
 
 Device identity is based on OpenRGB metadata such as vendor, name, serial, and location. If OpenRGB exposes identical devices without stable serial/location data, you may need to reselect them after the OpenRGB device list changes.
 
@@ -134,3 +136,11 @@ Run the local codec check with:
 ```bash
 npm run validate
 ```
+
+## Known Issues
+
+### Some large OpenRGB controllers may be skipped during refresh
+
+Some controllers with a large LED count or large zone/matrix payload can fail to load through SignalRGB's TCP addon transport even though OpenRGB itself still detects them. The addon keeps discovery simple: it reads controllers one by one and skips a controller after a timeout so one problematic device does not block the entire list.
+
+This behavior is tracked in [issue #4](https://github.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/issues/4). When the underlying TCP transport issue is resolved, these devices should work without discovery-side pause, retry, or pumping workarounds.
