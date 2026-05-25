@@ -41,9 +41,34 @@ Item {
         discovery.saveConnectionSettings(sdkServerIP.text, sdkServerPort.text)
     }
 
+    function readStatus() {
+        try {
+            var value = discovery.getStatus()
+            if (value === undefined || value === null || value === "") {
+                return "Idle"
+            }
+            return String(value)
+        } catch (e) {
+            return "Idle"
+        }
+    }
+
+    function readDevicesJson() {
+        try {
+            var value = discovery.getAvailableDevicesJson()
+            if (value === undefined || value === null || value === "") {
+                return "[]"
+            }
+            return String(value)
+        } catch (e) {
+            logUi("Failed to read OpenRGB device list for UI: " + String(e))
+            return "[]"
+        }
+    }
+
     function refreshUi() {
-        statusText = discovery.getStatus()
-        var devicesJson = discovery.getAvailableDevicesJson()
+        statusText = readStatus()
+        var devicesJson = readDevicesJson()
         availableDevices = safeJsonParse(devicesJson, [])
         availableDeviceCount = availableDevices.length
 
