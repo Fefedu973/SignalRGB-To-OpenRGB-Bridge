@@ -21,6 +21,7 @@ const HOST_SETTING = "SDKServerIP";
 const PORT_SETTING = "SDKServerPort";
 const SELECTED_DEVICES_SETTING = "SelectedDevices";
 const DISABLED_DEVICE_IDS_SETTING = "DisabledDeviceIds";
+const DISABLED_DEVICE_SUMMARIES_SETTING = "DisabledDeviceSummaries";
 const LAST_DEVICES_SETTING = "LastDevices";
 const STATUS_SETTING = "Status";
 const DEFAULT_HOST = "127.0.0.1";
@@ -28,7 +29,7 @@ const DEFAULT_PORT = 6742;
 const CLIENT_PROTOCOL_VERSION = 5;
 const CLIENT_NAME = "SignalRGB OpenRGB Bridge";
 const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/signalbridge.png";
-const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb/";
+const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_white/";
 const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
 const REQUEST_TIMEOUT_MS = 3000;
 
@@ -197,8 +198,8 @@ export function DiscoveryService() {
 					self.availableDevices = assignStableDeviceIds(devices, host, port);
 					self.availableDeviceSummaries = buildDeviceSummaries(self.availableDevices);
 					saveSetting(LAST_DEVICES_SETTING, JSON.stringify(self.availableDeviceSummaries));
-					const disabledDeviceIds = pruneDisabledDeviceIds(readDisabledDeviceIds(), self.availableDevices);
-					saveDisabledDeviceIds(disabledDeviceIds);
+					const disabledDeviceIds = readDisabledDeviceIds();
+					saveDisabledDeviceSummaries(mergeDisabledDeviceSummaries(disabledDeviceIds, self.availableDeviceSummaries));
 					removeStaleControllers(readSelectedDevices(), self.availableDevices);
 					self.selectedDevices = filterEnabledDevices(self.availableDevices, disabledDeviceIds);
 					saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(self.selectedDevices));
@@ -356,6 +357,17 @@ export function DiscoveryService() {
 	};
 
 	this.removeDevice = function (deviceId) {
+		deviceId = String(deviceId || "");
+		const deviceSummary = findDeviceSummaryById(
+			(this.availableDeviceSummaries || [])
+				.concat(buildDeviceSummaries(this.availableDevices || []))
+				.concat(buildDeviceSummaries(readSelectedDevices())),
+			deviceId
+		);
+		if (deviceSummary) {
+			upsertDisabledDeviceSummary(deviceSummary);
+		}
+
 		const controllerToRemove = service.getController(deviceId);
 		if (controllerToRemove !== undefined) {
 			service.removeController(controllerToRemove);
@@ -366,13 +378,14 @@ export function DiscoveryService() {
 		});
 		addDisabledDeviceId(deviceId);
 		saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(this.selectedDevices));
-		this.setStatus("Disabled device.");
+		this.setStatus("Disabled device. " + readDisabledDeviceIds().length + " deleted device(s) saved.");
 		return this.status;
 	};
 
 	this.removeAllDevices = function () {
 		const devicesToDisable = this.availableDevices && this.availableDevices.length > 0 ? this.availableDevices : readSelectedDevices();
 		addDisabledDeviceIds(getDeviceIds(devicesToDisable));
+		saveDisabledDeviceSummaries(mergeDisabledDeviceSummaries(readDisabledDeviceIds(), buildDeviceSummaries(devicesToDisable)));
 		this.selectedDevices = readSelectedDevices();
 		for (let i = 0; i < this.selectedDevices.length; i++) {
 			const controllerToRemove = service.getController(this.selectedDevices[i].deviceId);
@@ -390,6 +403,7 @@ export function DiscoveryService() {
 	this.restoreDevice = function (deviceId) {
 		deviceId = String(deviceId || "");
 		removeDisabledDeviceId(deviceId);
+		removeDisabledDeviceSummary(deviceId);
 
 		const deviceData = findDeviceById(this.availableDevices, deviceId);
 		if (!deviceData) {
@@ -409,6 +423,7 @@ export function DiscoveryService() {
 
 	this.restoreAllDevices = function () {
 		saveDisabledDeviceIds([]);
+		saveDisabledDeviceSummaries([]);
 		const devices = this.availableDevices || [];
 		if (devices.length === 0) {
 			this.setStatus("Devices re-enabled. Click Connect / Refresh to restore them.");
@@ -1280,7 +1295,7 @@ function buildDeviceSummaries(devices) {
 			openrgbIndex: item.openrgbIndex || 0,
 			openrgbHost: item.openrgbHost || DEFAULT_HOST,
 			openrgbPort: item.openrgbPort || DEFAULT_PORT,
-			ledCount: getControllerLedCount(item),
+			ledCount: item.ledCount !== undefined ? Number(item.ledCount || 0) : getControllerLedCount(item),
 			zoneCount: item.zones ? item.zones.length : 0,
 			type: item.type !== undefined ? item.type : 19,
 			icon: item.icon || getDeviceIconUrl(item.type),
@@ -1293,35 +1308,127 @@ function buildDeviceSummaries(devices) {
 
 function getDeviceIconUrl(deviceType) {
 	const iconName = DeviceTypeIcon[Number(deviceType)] || "unknown";
-	return DEVICE_ICON_BASE_URL + iconName + ".svg";
+	return DEVICE_ICON_BASE_URL + iconName + ".png";
 }
 
 function getBridgeDeviceIconUrl(deviceType) {
 	const iconName = DeviceTypeIcon[Number(deviceType)] || "unknown";
-	return BRIDGE_DEVICE_ICON_BASE_URL + iconName + ".svg";
+	return BRIDGE_DEVICE_ICON_BASE_URL + iconName + ".png";
 }
 
 function getDisabledDeviceSummaries(availableDevices, availableDeviceSummaries) {
 	const disabledIds = readDisabledDeviceIds();
-	const summaries = availableDeviceSummaries && availableDeviceSummaries.length > 0
-		? availableDeviceSummaries
-		: buildDeviceSummaries(safeJsonParse(readSetting(LAST_DEVICES_SETTING, "[]"), []));
 	const output = [];
 
-	for (let i = 0; i < summaries.length; i++) {
-		const item = summaries[i] || {};
-		if (item.deviceId && (disabledIds.indexOf(item.deviceId) >= 0 || service.getController(item.deviceId) === undefined)) {
+	if (disabledIds.length === 0) {
+		return output;
+	}
+
+	const knownSummaries = getKnownDeviceSummaries(availableDevices, availableDeviceSummaries);
+	const disabledSummaries = mergeDisabledDeviceSummaries(disabledIds, knownSummaries);
+	saveDisabledDeviceSummaries(disabledSummaries);
+
+	for (let i = 0; i < disabledIds.length; i++) {
+		const item = findDeviceSummaryById(disabledSummaries, disabledIds[i]);
+		if (item) {
 			output.push(item);
 		}
 	}
 
-	if (output.length > 0 || !availableDevices || availableDevices.length === 0) {
-		return output;
+	return output;
+}
+
+function getKnownDeviceSummaries(availableDevices, availableDeviceSummaries) {
+	const output = [];
+	appendDeviceSummaries(output, availableDeviceSummaries || []);
+	appendDeviceSummaries(output, buildDeviceSummaries(availableDevices || []));
+	appendDeviceSummaries(output, safeJsonParse(readSetting(LAST_DEVICES_SETTING, "[]"), []));
+	appendDeviceSummaries(output, buildDeviceSummaries(readSelectedDevices()));
+	appendDeviceSummaries(output, readDisabledDeviceSummaries());
+	return output;
+}
+
+function appendDeviceSummaries(output, devices) {
+	for (let i = 0; i < devices.length; i++) {
+		const summary = normalizeDeviceSummary(devices[i]);
+		if (!summary || findDeviceSummaryById(output, summary.deviceId)) {
+			continue;
+		}
+
+		output.push(summary);
+	}
+}
+
+function normalizeDeviceSummary(item) {
+	if (!item || !item.deviceId && !item.id) {
+		return undefined;
 	}
 
-	return buildDeviceSummaries((availableDevices || []).filter(function (item) {
-		return item && disabledIds.indexOf(item.deviceId) >= 0;
-	}));
+	const type = item.type !== undefined ? item.type : 19;
+	return {
+		deviceId: item.deviceId || item.id || "",
+		name: item.name || "OpenRGB Device",
+		vendor: item.vendor || "",
+		description: item.description || "",
+		serial: item.serial || "",
+		location: item.location || "",
+		openrgbIndex: item.openrgbIndex || 0,
+		openrgbHost: item.openrgbHost || DEFAULT_HOST,
+		openrgbPort: item.openrgbPort || DEFAULT_PORT,
+		ledCount: item.ledCount !== undefined ? Number(item.ledCount || 0) : getControllerLedCount(item),
+		zoneCount: item.zoneCount !== undefined ? Number(item.zoneCount || 0) : (item.zones ? item.zones.length : 0),
+		type: type,
+		icon: item.icon || getDeviceIconUrl(type),
+		image: item.image || getBridgeDeviceIconUrl(type)
+	};
+}
+
+function mergeDisabledDeviceSummaries(disabledIds, knownSummaries) {
+	const output = [];
+	const known = [];
+	appendDeviceSummaries(known, knownSummaries || []);
+	appendDeviceSummaries(known, readDisabledDeviceSummaries());
+
+	for (let i = 0; i < disabledIds.length; i++) {
+		const deviceId = String(disabledIds[i] || "");
+		if (!deviceId) {
+			continue;
+		}
+
+		const summary = findDeviceSummaryById(known, deviceId) || {
+			deviceId: deviceId,
+			name: "OpenRGB Device",
+			vendor: "",
+			description: "",
+			serial: "",
+			location: "",
+			openrgbIndex: 0,
+			openrgbHost: DEFAULT_HOST,
+			openrgbPort: DEFAULT_PORT,
+			ledCount: 0,
+			zoneCount: 0,
+			type: 19,
+			icon: getDeviceIconUrl(19),
+			image: getBridgeDeviceIconUrl(19)
+		};
+
+		if (!findDeviceSummaryById(output, deviceId)) {
+			output.push(summary);
+		}
+	}
+
+	return output;
+}
+
+function findDeviceSummaryById(devices, deviceId) {
+	deviceId = String(deviceId || "");
+	for (let i = 0; i < (devices || []).length; i++) {
+		const item = devices[i] || {};
+		if (String(item.deviceId || item.id || "") === deviceId) {
+			return normalizeDeviceSummary(item);
+		}
+	}
+	return undefined;
 }
 
 function filterEnabledDevices(devices, disabledIds) {
@@ -1383,6 +1490,43 @@ function readDisabledDeviceIds() {
 		}
 	}
 	return output;
+}
+
+function readDisabledDeviceSummaries() {
+	const parsed = safeJsonParse(readSetting(DISABLED_DEVICE_SUMMARIES_SETTING, "[]"), []);
+	const output = [];
+	appendDeviceSummaries(output, parsed);
+	return output;
+}
+
+function saveDisabledDeviceSummaries(devices) {
+	const output = [];
+	appendDeviceSummaries(output, devices || []);
+	const value = JSON.stringify(output);
+	if (readSetting(DISABLED_DEVICE_SUMMARIES_SETTING, "[]") !== value) {
+		saveSetting(DISABLED_DEVICE_SUMMARIES_SETTING, value);
+	}
+}
+
+function upsertDisabledDeviceSummary(deviceData) {
+	const summary = normalizeDeviceSummary(deviceData);
+	if (!summary) {
+		return;
+	}
+
+	const devices = readDisabledDeviceSummaries().filter(function (item) {
+		return item.deviceId !== summary.deviceId;
+	});
+	devices.push(summary);
+	saveDisabledDeviceSummaries(devices);
+}
+
+function removeDisabledDeviceSummary(deviceId) {
+	deviceId = String(deviceId || "");
+	const devices = readDisabledDeviceSummaries().filter(function (item) {
+		return item.deviceId !== deviceId;
+	});
+	saveDisabledDeviceSummaries(devices);
 }
 
 function saveDisabledDeviceIds(deviceIds) {

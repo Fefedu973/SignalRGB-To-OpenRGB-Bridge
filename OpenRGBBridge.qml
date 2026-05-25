@@ -5,7 +5,6 @@ Item {
     property int controllerCount: 0
     property int disabledDeviceCount: 0
     property string lastInactiveDevicesSignature: ""
-    property string lastKnownDevicesJson: "[]"
     property string lastParseError: ""
 
     function safeJsonParse(value, fallback) {
@@ -60,15 +59,15 @@ Item {
         refreshDisabledDevices()
     }
 
-    function readAvailableDevicesJson() {
+    function readDisabledDevicesJson() {
         try {
-            var value = discovery.getAvailableDevicesJson()
+            var value = discovery.getDisabledDevicesJson()
             if (value === undefined || value === null || value === "") {
                 return "[]"
             }
             return String(value)
         } catch (e) {
-            logUi("Failed to read OpenRGB devices for inactive UI list: " + String(e))
+            logUi("Failed to read deleted OpenRGB devices for UI list: " + String(e))
             return "[]"
         }
     }
@@ -124,17 +123,10 @@ Item {
     }
 
     function refreshDisabledDevices() {
-        var devicesJson = readAvailableDevicesJson()
+        var devicesJson = readDisabledDevicesJson()
         var devices = safeJsonParse(devicesJson, [])
-        if (devices.length > 0) {
-            lastKnownDevicesJson = devicesJson
-        } else {
-            devicesJson = lastKnownDevicesJson
-            devices = safeJsonParse(devicesJson, [])
-        }
 
-        var activeIds = activeDeviceIds()
-        var signature = devicesJson + "|" + activeIds.join(",")
+        var signature = devicesJson
         if (signature === lastInactiveDevicesSignature) {
             disabledDeviceCount = inactiveDeviceModel.count
             return
@@ -163,7 +155,7 @@ Item {
         }
 
         disabledDeviceCount = inactiveDeviceModel.count
-        logUi("OpenRGB Bridge UI inactive model has " + disabledDeviceCount + " row(s) from " + devices.length + " known device(s) and " + activeIds.length + " active controller(s).")
+        logUi("OpenRGB Bridge UI deleted model has " + disabledDeviceCount + " row(s).")
     }
 
     function refreshDevices() {
@@ -415,8 +407,7 @@ Item {
                 spacing: 8
                 onCountChanged: {
                     controllerCount = count
-                    lastInactiveDevicesSignature = ""
-                    refreshUi()
+                    refreshDisabledDevices()
                     logUi("OpenRGB Bridge UI controller model has " + count + " row(s).")
                 }
 
@@ -488,6 +479,7 @@ Item {
                             onClicked: {
                                 discovery.removeDevice(String(openRgbController.deviceId || openRgbController.id || ""))
                                 lastInactiveDevicesSignature = ""
+                                refreshDisabledDevices()
                                 statusText = readStatus()
                             }
                         }
@@ -620,6 +612,7 @@ Item {
                                 onClicked: {
                                     discovery.restoreDevice(String(deviceId || ""))
                                     lastInactiveDevicesSignature = ""
+                                    refreshDisabledDevices()
                                     statusText = readStatus()
                                 }
                             }
