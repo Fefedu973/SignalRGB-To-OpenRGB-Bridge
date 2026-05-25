@@ -33,6 +33,7 @@ const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenR
 const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_white/";
 const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
 const REQUEST_TIMEOUT_MS = 10000;
+const DISCOVERY_REQUEST_TIMEOUT_MS = 30000;
 
 const DeviceTypeIcon = {
 	0: "mainboard",
@@ -909,16 +910,17 @@ class OpenRGBClient {
 		pendingRequest.callback(packet);
 	}
 
-	request(commandId, payload, deviceId, callback) {
+	request(commandId, payload, deviceId, callback, timeoutMs) {
 		if (!this.connected) {
 			this.reportError("Cannot write to OpenRGB while disconnected.");
 			return;
 		}
 
+		timeoutMs = timeoutMs === undefined ? REQUEST_TIMEOUT_MS : timeoutMs;
 		const request = {
 			commandId: commandId,
 			deviceId: deviceId || 0,
-			timeoutAt: Date.now() + REQUEST_TIMEOUT_MS,
+			timeoutAt: Date.now() + timeoutMs,
 			callback: callback || function () {}
 		};
 
@@ -932,7 +934,7 @@ class OpenRGBClient {
 
 				self.pending.splice(pendingIndex, 1);
 				request.callback(undefined, "OpenRGB request timed out: command " + commandId + " device " + (deviceId || 0));
-			}, REQUEST_TIMEOUT_MS);
+			}, timeoutMs);
 		}
 
 		this.pending.push(request);
@@ -989,7 +991,7 @@ class OpenRGBClient {
 		});
 	}
 
-	getControllerData(index, callback) {
+	getControllerData(index, callback, timeoutMs) {
 		const payload = this.protocolVersion > 0 ? u32(this.protocolVersion) : [];
 		const self = this;
 		this.request(Command.requestControllerData, payload, index, function (packet, error) {
@@ -1003,12 +1005,11 @@ class OpenRGBClient {
 			} catch (error) {
 				callback(undefined, "Failed to parse OpenRGB controller " + index + ": " + error);
 			}
-		});
+		}, timeoutMs);
 	}
 
 	getAllControllers(callback) {
 		const self = this;
-		const MAX_RETRY_ROUNDS = 2;
 		this.getControllerCount(function (count, countError) {
 			if (countError) {
 				callback([], countError);
@@ -1016,61 +1017,47 @@ class OpenRGBClient {
 			}
 
 			const devices = [];
+			const failed = [];
+			let remaining = count;
+			let received = 0;
 			self.onProgress("OpenRGB reported " + count + " controller(s).");
 
-			// Read a list of controller indices once, collecting the ones that fail.
-			const readPass = function (indices, round, done) {
-				const failed = [];
-				const step = function (i) {
-					if (i >= indices.length) {
-						done(failed);
-						return;
-					}
-
-					const index = indices[i];
-					self.onProgress(round === 0
-						? "Reading OpenRGB controller " + (index + 1) + "/" + count + "..."
-						: "Retrying OpenRGB controller " + (index + 1) + " (attempt " + (round + 1) + ")...");
-					self.getControllerData(index, function (controllerData, error) {
-						if (error) {
-							self.logger("OpenRGB controller " + index + " read failed: " + error);
-							failed.push(index);
-						} else {
-							devices.push(controllerData);
-						}
-						step(i + 1);
-					});
-				};
-				step(0);
-			};
-
-			// Devices often time out only because of transient contention with live
-			// rendering connections; by the time the first pass ends that has usually
-			// cleared, so retry the failed ones instead of dropping them.
-			const runRound = function (indices, round) {
-				readPass(indices, round, function (failed) {
-					if (failed.length > 0 && round < MAX_RETRY_ROUNDS) {
-						self.onProgress("Retrying " + failed.length + " OpenRGB controller(s) that timed out...");
-						runRound(failed, round + 1);
-						return;
-					}
-
-					if (failed.length > 0) {
-						self.logger("Gave up on " + failed.length + " OpenRGB controller(s) after retries: " + failed.join(", "));
-					}
-
-					devices.sort(function (a, b) {
-						return (a.openrgbIndex || 0) - (b.openrgbIndex || 0);
-					});
-					callback(devices);
-				});
-			};
-
-			const initial = [];
-			for (let i = 0; i < count; i++) {
-				initial.push(i);
+			if (count === 0) {
+				callback([]);
+				return;
 			}
-			runRound(initial, 0);
+
+			const finishOne = function () {
+				remaining--;
+				if (remaining > 0) {
+					return;
+				}
+
+				if (failed.length > 0) {
+					self.logger("Gave up on " + failed.length + " OpenRGB controller(s): " + failed.join(", "));
+				}
+
+				devices.sort(function (a, b) {
+					return (a.openrgbIndex || 0) - (b.openrgbIndex || 0);
+				});
+				callback(devices);
+			};
+
+			self.onProgress("Requesting OpenRGB data for " + count + " controller(s)...");
+			for (let i = 0; i < count; i++) {
+				const index = i;
+				self.getControllerData(index, function (controllerData, error) {
+					if (error) {
+						self.logger("OpenRGB controller " + index + " read failed: " + error);
+						failed.push(index);
+					} else {
+						devices.push(controllerData);
+						received++;
+						self.onProgress("Read OpenRGB controller " + (index + 1) + "/" + count + " (" + received + "/" + count + " received)...");
+					}
+					finishOne();
+				}, DISCOVERY_REQUEST_TIMEOUT_MS);
+			}
 		});
 	}
 
