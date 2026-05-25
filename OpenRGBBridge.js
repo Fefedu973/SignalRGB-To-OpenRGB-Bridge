@@ -27,6 +27,7 @@ const DEFAULT_PORT = 6742;
 const CLIENT_PROTOCOL_VERSION = 5;
 const CLIENT_NAME = "SignalRGB OpenRGB Bridge";
 const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/signalbridge.png";
+const REQUEST_TIMEOUT_MS = 3000;
 
 const Command = {
 	requestControllerCount: 0,
@@ -366,10 +367,8 @@ class OpenRGBClient {
 
 		try {
 			this.socket = tcp.createSocket();
-			this.socket.on("connected", this.handleConnected.bind(this));
 			this.socket.on("connection", this.handleConnected.bind(this));
 			this.socket.on("message", this.handleMessage.bind(this));
-			this.socket.on("disconnected", this.handleDisconnected.bind(this));
 			this.socket.on("error", this.handleError.bind(this));
 			this.socket.connect(this.host, this.port);
 		} catch (error) {
@@ -419,7 +418,12 @@ class OpenRGBClient {
 		this.logger("Connected to OpenRGB SDK server.");
 
 		const self = this;
-		this.request(Command.requestProtocolVersion, u32(CLIENT_PROTOCOL_VERSION), 0, function (packet) {
+		this.request(Command.requestProtocolVersion, u32(CLIENT_PROTOCOL_VERSION), 0, function (packet, error) {
+			if (error) {
+				self.reportError(error);
+				return;
+			}
+
 			if (packet && packet.payload.length >= 4) {
 				self.protocolVersion = Math.min(readU32(packet.payload, 0), CLIENT_PROTOCOL_VERSION);
 			}
@@ -484,6 +488,9 @@ class OpenRGBClient {
 		}
 
 		const pendingRequest = this.pending.splice(pendingIndex, 1)[0];
+		if (pendingRequest.timeoutId !== undefined) {
+			clearTimeout(pendingRequest.timeoutId);
+		}
 		pendingRequest.callback(packet);
 	}
 
@@ -493,11 +500,26 @@ class OpenRGBClient {
 			return;
 		}
 
-		this.pending.push({
+		const request = {
 			commandId: commandId,
 			deviceId: deviceId || 0,
 			callback: callback || function () {}
-		});
+		};
+
+		if (typeof setTimeout === "function") {
+			const self = this;
+			request.timeoutId = setTimeout(function () {
+				const pendingIndex = self.pending.indexOf(request);
+				if (pendingIndex < 0) {
+					return;
+				}
+
+				self.pending.splice(pendingIndex, 1);
+				request.callback(undefined, "OpenRGB request timed out: command " + commandId + " device " + (deviceId || 0));
+			}, REQUEST_TIMEOUT_MS);
+		}
+
+		this.pending.push(request);
 		this.sendPacket(commandId, payload || [], deviceId || 0);
 	}
 
@@ -516,7 +538,12 @@ class OpenRGBClient {
 	}
 
 	getControllerCount(callback) {
-		this.request(Command.requestControllerCount, [], 0, function (packet) {
+		this.request(Command.requestControllerCount, [], 0, function (packet, error) {
+			if (error) {
+				callback(0, error);
+				return;
+			}
+
 			if (!packet || packet.payload.length < 4) {
 				callback(0, "OpenRGB returned an invalid controller count.");
 				return;
@@ -529,7 +556,12 @@ class OpenRGBClient {
 	getControllerData(index, callback) {
 		const payload = this.protocolVersion > 0 ? u32(this.protocolVersion) : [];
 		const self = this;
-		this.request(Command.requestControllerData, payload, index, function (packet) {
+		this.request(Command.requestControllerData, payload, index, function (packet, error) {
+			if (error) {
+				callback(undefined, error);
+				return;
+			}
+
 			try {
 				callback(parseControllerData(packet.payload, index, self.protocolVersion));
 			} catch (error) {
@@ -547,12 +579,14 @@ class OpenRGBClient {
 			}
 
 			const devices = [];
+			self.logger("OpenRGB reported " + count + " controller(s).");
 			const loadNext = function (index) {
 				if (index >= count) {
 					callback(devices);
 					return;
 				}
 
+				self.logger("Reading OpenRGB controller " + (index + 1) + "/" + count + "...");
 				self.getControllerData(index, function (controllerData, error) {
 					if (error) {
 						callback([], error);
