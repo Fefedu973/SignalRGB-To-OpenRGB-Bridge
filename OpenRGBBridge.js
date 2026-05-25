@@ -33,7 +33,7 @@ const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenR
 const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_white/";
 const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
 const REQUEST_TIMEOUT_MS = 10000;
-const DISCOVERY_REQUEST_TIMEOUT_MS = 60000;
+const DISCOVERY_REQUEST_TIMEOUT_MS = 0;
 
 const DeviceTypeIcon = {
 	0: "mainboard",
@@ -917,14 +917,15 @@ class OpenRGBClient {
 		}
 
 		timeoutMs = timeoutMs === undefined ? REQUEST_TIMEOUT_MS : timeoutMs;
+		const hasTimeout = timeoutMs > 0;
 		const request = {
 			commandId: commandId,
 			deviceId: deviceId || 0,
-			timeoutAt: Date.now() + timeoutMs,
+			timeoutAt: hasTimeout ? Date.now() + timeoutMs : 0,
 			callback: callback || function () {}
 		};
 
-		if (typeof setTimeout === "function") {
+		if (hasTimeout && typeof setTimeout === "function") {
 			const self = this;
 			request.timeoutId = setTimeout(function () {
 				const pendingIndex = self.pending.indexOf(request);
@@ -949,6 +950,9 @@ class OpenRGBClient {
 		const now = Date.now();
 		for (let i = this.pending.length - 1; i >= 0; i--) {
 			const request = this.pending[i];
+			if (!request.timeoutAt) {
+				continue;
+			}
 			if (request.timeoutAt > now) {
 				continue;
 			}
