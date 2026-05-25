@@ -205,16 +205,18 @@ export function DiscoveryService() {
 
 		this.client = client;
 		client.connect();
+		return this.status;
 	};
 
 	this.rescan = function () {
 		if (this.client && this.client.isReady()) {
 			this.client.requestRescanDevices();
 			this.setStatus("Requested an OpenRGB device rescan. Wait a moment, then click Connect / Refresh.");
-			return;
+			return this.status;
 		}
 
 		this.setStatus("Connect to OpenRGB before requesting a rescan.");
+		return this.status;
 	};
 
 	this.getHost = function () {
@@ -230,10 +232,12 @@ export function DiscoveryService() {
 		port = normalizePort(port);
 		saveSetting(HOST_SETTING, host);
 		saveSetting(PORT_SETTING, String(port));
+		return host + ":" + port;
 	};
 
 	this.logUi = function (message) {
 		logFromService(String(message || ""));
+		return "";
 	};
 
 	this.getStatus = function () {
@@ -288,13 +292,13 @@ export function DiscoveryService() {
 
 		if (selectedIndex >= 0) {
 			this.removeDevice(deviceId);
-			return;
+			return this.status;
 		}
 
 		const devices = this.availableDevices || [];
 		if (devices.length === 0) {
 			this.setStatus("Click Connect / Refresh before adding new OpenRGB devices.");
-			return;
+			return this.status;
 		}
 
 		const deviceData = devices.find(function (item) {
@@ -303,13 +307,14 @@ export function DiscoveryService() {
 
 		if (!deviceData) {
 			this.setStatus("Could not find selected OpenRGB device.");
-			return;
+			return this.status;
 		}
 
 		this.selectedDevices.push(deviceData);
 		saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(this.selectedDevices));
 		this.addOrUpdateController(deviceData);
 		this.setStatus("Added " + deviceData.name + ".");
+		return this.status;
 	};
 
 	this.removeDevice = function (deviceId) {
@@ -324,6 +329,7 @@ export function DiscoveryService() {
 		});
 		saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(this.selectedDevices));
 		this.setStatus("Removed device.");
+		return this.status;
 	};
 
 	this.removeAllDevices = function () {
@@ -339,6 +345,7 @@ export function DiscoveryService() {
 		this.selectedDevices = [];
 		saveSetting(SELECTED_DEVICES_SETTING, "[]");
 		this.setStatus("Cleared selected OpenRGB devices.");
+		return this.status;
 	};
 
 	this.connectSelectedDevices = function () {
@@ -346,11 +353,12 @@ export function DiscoveryService() {
 		for (let i = 0; i < this.selectedDevices.length; i++) {
 			this.addOrUpdateController(this.selectedDevices[i]);
 		}
+		return String(this.selectedDevices.length);
 	};
 
 	this.addOrUpdateController = function (deviceData) {
 		if (!deviceData || !deviceData.deviceId) {
-			return;
+			return "";
 		}
 
 		const existing = service.getController(deviceData.deviceId);
@@ -362,12 +370,14 @@ export function DiscoveryService() {
 		const openRgbController = new OpenRGBController(deviceData);
 		service.addController(openRgbController);
 		service.announceController(openRgbController);
+		return deviceData.deviceId;
 	};
 
 	this.setStatus = function (message) {
 		this.status = message;
 		saveSetting(STATUS_SETTING, message);
 		logFromService(message);
+		return this.status;
 	};
 }
 
