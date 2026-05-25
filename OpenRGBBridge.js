@@ -86,6 +86,7 @@ let renderClientKey = "";
 let renderStates = {};
 let lastScanFlagCheck = 0;
 let scanActive = false;
+let scanSuspendLogged = false;
 
 export function Initialize() {
 	device.setName(controller.name || "OpenRGB Device");
@@ -97,12 +98,24 @@ export function Initialize() {
 }
 
 export function Render() {
-	// Back off while a discovery scan is running so live rendering connections do not
-	// contend with the scan on the OpenRGB SDK server (the flag is shared via settings).
+	// While a discovery scan runs, CLOSE this device's render connection so OpenRGB is
+	// free to read it: OpenRGB serves each client on its own thread and a device that is
+	// being streamed (continuous SetLEDs) blocks the scan's controller-data read on the
+	// same device, which is what makes the selected/rendering devices time out.
 	if (isScanActive()) {
-		device.pause(120);
+		if (renderClient) {
+			renderClient.close();
+			renderClient = undefined;
+			renderClientKey = "";
+		}
+		if (!scanSuspendLogged) {
+			scanSuspendLogged = true;
+			logFromDevice("OpenRGB scan in progress: pausing rendering for " + (controller.name || controller.deviceId || controller.id) + " to free the device.");
+		}
+		device.pause(250);
 		return;
 	}
+	scanSuspendLogged = false;
 
 	const client = ensureRenderClient(controller, logFromDevice);
 	if (!client) {
@@ -207,8 +220,16 @@ export function DiscoveryService() {
 					return;
 				}
 
-				self.setStatus("Connected. Reading OpenRGB controllers...");
-				client.getAllControllers(function (devices, error) {
+				self.setStatus("Connected. Letting live rendering release devices...");
+				// Give the device render contexts a beat to notice the scan flag and close
+				// their connections before we read, so streamed devices are not locked.
+				setTimeout(function () {
+					if (self.refreshId !== refreshId || self.client !== client) {
+						return;
+					}
+
+					self.setStatus("Reading OpenRGB controllers...");
+					client.getAllControllers(function (devices, error) {
 					if (self.refreshId !== refreshId || self.client !== client) {
 						return;
 					}
@@ -234,6 +255,7 @@ export function DiscoveryService() {
 					self.finishRefresh(client);
 					self.setStatus("Found " + self.availableDevices.length + " OpenRGB device(s). SignalRGB controllers updated.");
 				});
+				}, 700);
 			},
 			onError: function (message) {
 				if (self.refreshId !== refreshId || self.client !== client) {
@@ -1073,6 +1095,12 @@ function setScanActive(active) {
 }
 
 function ensureRenderClient(controllerData, logger) {
+	// Do not open a render connection during a scan; it would contend with the scan and
+	// re-introduce the per-device read timeouts. Render() retries once the scan clears.
+	if (isScanActive()) {
+		return undefined;
+	}
+
 	const host = normalizeHost(controllerData.openrgbHost || readSetting(HOST_SETTING, DEFAULT_HOST));
 	const port = normalizePort(controllerData.openrgbPort || readNumberSetting(PORT_SETTING, DEFAULT_PORT));
 	const key = host + ":" + port;
