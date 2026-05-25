@@ -2,9 +2,6 @@ Item {
     anchors.fill: parent
 
     property string statusText: "Idle"
-    property int activeCount: 0
-    property int deletedCount: 0
-    property int lastRevision: -1
     property bool busy: false
     property string lastParseError: ""
 
@@ -42,28 +39,11 @@ Item {
         }
     }
 
-    function readRevision() {
-        try {
-            return Number(discovery.getRevision() || 0)
-        } catch (e) {
-            return 0
-        }
-    }
-
     function readBusy() {
         try {
             return !!discovery.isBusy()
         } catch (e) {
             return false
-        }
-    }
-
-    function readActiveDevicesJson() {
-        try {
-            return String(discovery.getActiveDevicesJson() || "[]")
-        } catch (e) {
-            logUi("Failed to read active OpenRGB devices: " + String(e))
-            return "[]"
         }
     }
 
@@ -76,8 +56,12 @@ Item {
         }
     }
 
-    function appendDeviceRows(model, devices) {
-        model.clear()
+    // The active list is driven reactively by SignalRGB's own service.controllers
+    // collection, so only the "deleted" (discovered-but-not-added) list needs a
+    // manually populated model.
+    function refreshDeletedList() {
+        var devices = safeJsonParse(readDeletedDevicesJson(), [])
+        deletedDeviceModel.clear()
         for (var i = 0; i < devices.length; i++) {
             var item = devices[i] || {}
             var deviceId = String(item.deviceId || "")
@@ -85,40 +69,21 @@ Item {
                 continue
             }
 
-            model.append({
+            deletedDeviceModel.append({
                 "deviceId": deviceId,
                 "name": String(item.name || "OpenRGB Device"),
                 "vendor": String(item.vendor || ""),
                 "openrgbIndex": Number(item.openrgbIndex || 0),
                 "ledCount": Number(item.ledCount || 0),
                 "zoneCount": Number(item.zoneCount || 0),
-                "iconSource": String(item.icon || item.image || "")
+                "iconSource": String(item.image || item.icon || "")
             })
         }
-    }
-
-    function refreshDeviceLists(force) {
-        var revision = readRevision()
-        if (!force && revision === lastRevision) {
-            statusText = readStatus()
-            busy = readBusy()
-            return
-        }
-
-        appendDeviceRows(activeDeviceModel, safeJsonParse(readActiveDevicesJson(), []))
-        appendDeviceRows(deletedDeviceModel, safeJsonParse(readDeletedDevicesJson(), []))
-        activeCount = activeDeviceModel.count
-        deletedCount = deletedDeviceModel.count
-        statusText = readStatus()
-        busy = readBusy()
-        lastRevision = revision
-        logUi("OpenRGB Bridge UI active model has " + activeCount + " row(s); deleted model has " + deletedCount + " row(s).")
     }
 
     function refreshStatusOnly() {
         statusText = readStatus()
         busy = readBusy()
-        lastRevision = readRevision()
     }
 
     function loadSettings() {
@@ -140,18 +105,20 @@ Item {
 
     function deleteDevice(deviceId) {
         discovery.removeDevice(String(deviceId || ""))
-        refreshDeviceLists(true)
+        refreshDeletedList()
+        refreshStatusOnly()
     }
 
     function restoreDevice(deviceId) {
         discovery.restoreDevice(String(deviceId || ""))
-        refreshDeviceLists(true)
+        refreshDeletedList()
+        refreshStatusOnly()
     }
 
     Component.onCompleted: {
         loadSettings()
         discovery.connectSelectedDevices()
-        refreshDeviceLists(true)
+        refreshDeletedList()
         refreshDevices()
     }
 
@@ -159,11 +126,10 @@ Item {
         interval: 1000
         running: true
         repeat: true
-        onTriggered: refreshDeviceLists(false)
-    }
-
-    ListModel {
-        id: activeDeviceModel
+        onTriggered: {
+            refreshStatusOnly()
+            refreshDeletedList()
+        }
     }
 
     ListModel {
@@ -321,7 +287,7 @@ Item {
                         font.bold: true
                         onClicked: {
                             discovery.rescan()
-                            refreshDeviceLists(true)
+                            refreshStatusOnly()
                         }
                     }
                 }
@@ -344,7 +310,7 @@ Item {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     color: theme.primarytextcolor
-                    text: "Devices (" + activeDeviceModel.count + ")"
+                    text: "Devices (" + activeDeviceList.count + ")"
                     font.pixelSize: 15
                     font.family: "Poppins"
                     font.bold: true
@@ -357,7 +323,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 130
                     height: 30
-                    opacity: busy || activeDeviceModel.count === 0 ? 0.55 : 1
+                    opacity: busy || activeDeviceList.count === 0 ? 0.55 : 1
 
                     Rectangle {
                         anchors.fill: parent
@@ -367,20 +333,21 @@ Item {
 
                     ToolButton {
                         anchors.fill: parent
-                        enabled: !busy && activeDeviceModel.count > 0
+                        enabled: !busy && activeDeviceList.count > 0
                         text: "Delete All"
                         font.family: "Poppins"
                         font.bold: true
                         onClicked: {
                             discovery.removeAllDevices()
-                            refreshDeviceLists(true)
+                            refreshDeletedList()
+                            refreshStatusOnly()
                         }
                     }
                 }
             }
 
             Text {
-                visible: activeDeviceModel.count === 0
+                visible: activeDeviceList.count === 0
                 color: theme.secondarytextcolor
                 text: "No active OpenRGB devices. Click Connect / Refresh after starting the OpenRGB SDK server, or restore a deleted device below."
                 font.pixelSize: 13
@@ -391,7 +358,7 @@ Item {
 
             ListView {
                 id: activeDeviceList
-                model: activeDeviceModel
+                model: service.controllers
                 width: parent.width
                 height: count * 70
                 interactive: false
@@ -399,13 +366,14 @@ Item {
                 spacing: 8
 
                 delegate: Rectangle {
-                    property string rowDeviceId: String(deviceId || "")
-                    property string rowName: String(name || "OpenRGB Device")
-                    property string rowVendor: String(vendor || "")
-                    property int rowOpenRgbIndex: Number(openrgbIndex || 0)
-                    property int rowLedCount: Number(ledCount || 0)
-                    property int rowZoneCount: Number(zoneCount || 0)
-                    property string rowIconSource: String(iconSource || "")
+                    property var ctrl: model.modelData.obj
+                    property string rowDeviceId: ctrl ? String(ctrl.deviceId || ctrl.id || "") : ""
+                    property string rowName: ctrl ? String(ctrl.name || "OpenRGB Device") : "OpenRGB Device"
+                    property string rowVendor: ctrl ? String(ctrl.vendor || "") : ""
+                    property int rowOpenRgbIndex: ctrl ? Number(ctrl.openrgbIndex || 0) : 0
+                    property int rowLedCount: ctrl ? Number(ctrl.ledCount || 0) : 0
+                    property int rowZoneCount: ctrl ? Number(ctrl.zoneCount || 0) : 0
+                    property string rowIconSource: ctrl ? String(ctrl.image || ctrl.icon || "") : ""
 
                     width: activeDeviceList.width
                     height: 62
@@ -513,7 +481,8 @@ Item {
                         font.bold: true
                         onClicked: {
                             discovery.restoreAllDevices()
-                            refreshDeviceLists(true)
+                            refreshDeletedList()
+                            refreshStatusOnly()
                         }
                     }
                 }
