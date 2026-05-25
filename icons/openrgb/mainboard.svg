@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
-<svg
-   width="26"
+<svg fill="#ffffff" width="26"
    height="26"
    viewBox="0 0 6.8791668 6.8791668"
    version="1.1"
@@ -18,7 +17,7 @@
    xmlns:svg="http://www.w3.org/2000/svg"><sodipodi:namedview
      id="namedview7"
      pagecolor="#ffffff"
-     bordercolor="#000000"
+     bordercolor="#ffffff"
      borderopacity="0.25"
      inkscape:showpageshadow="2"
      inkscape:pageopacity="0.0"
@@ -61,8 +60,8 @@
              fill="currentColor"
              id="path134" /></g></g><path
          id="rect2407"
-         style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.827;stroke-linejoin:round;stroke-miterlimit:1.8;stroke-dasharray:none"
+         style="fill:#ffffff;fill-opacity:1;stroke:#ffffff;stroke-width:0.827;stroke-linejoin:round;stroke-miterlimit:1.8;stroke-dasharray:none"
          d="m 101.24903,116.1547 v 3.48919 h 3.4892 v -3.48919 z" /><path
          id="rect2409"
-         style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.827;stroke-linejoin:round;stroke-miterlimit:1.8;stroke-dasharray:none"
+         style="fill:#ffffff;fill-opacity:1;stroke:#ffffff;stroke-width:0.827;stroke-linejoin:round;stroke-miterlimit:1.8;stroke-dasharray:none"
          d="m 109.70376,125.10751 v 3.35794 h 2.0128 v -3.35794 z" /></g></g></svg>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="10" fill="#111827"/>
+  <image href="../openrgb/info.svg" x="8" y="8" width="42" height="42" preserveAspectRatio="xMidYMid meet"/>
+  <circle cx="49" cy="49" r="13" fill="#020617" stroke="#334155" stroke-width="2"/>
+  <image href="../../signalbridge.png" x="38" y="38" width="22" height="22" preserveAspectRatio="xMidYMid meet"/>
+</svg>

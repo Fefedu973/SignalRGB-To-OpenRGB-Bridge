@@ -29,6 +29,7 @@ const CLIENT_PROTOCOL_VERSION = 5;
 const CLIENT_NAME = "SignalRGB OpenRGB Bridge";
 const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/signalbridge.png";
 const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb/";
+const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
 const REQUEST_TIMEOUT_MS = 3000;
 
 const DeviceTypeIcon = {
@@ -478,7 +479,8 @@ class OpenRGBController {
 		this.zones = deviceData.zones || [];
 		this.leds = deviceData.leds || [];
 		this.colors = deviceData.colors || [];
-		this.image = getDeviceIconUrl(this.type);
+		this.icon = getDeviceIconUrl(this.type);
+		this.image = getBridgeDeviceIconUrl(this.type);
 	}
 
 	updateWithValue(deviceData) {
@@ -491,7 +493,9 @@ class OpenRGBController {
 		this.version = deviceData.version || this.version;
 		this.serial = deviceData.serial || this.serial;
 		this.location = deviceData.location || this.location;
-		this.type = deviceData.type || this.type;
+		this.type = deviceData.type !== undefined ? deviceData.type : this.type;
+		this.icon = getDeviceIconUrl(this.type);
+		this.image = getBridgeDeviceIconUrl(this.type);
 		this.activeMode = deviceData.activeMode || this.activeMode;
 		this.modes = deviceData.modes || this.modes;
 		this.zones = deviceData.zones || this.zones;
@@ -1250,7 +1254,8 @@ function assignStableDeviceIds(devices, host, port) {
 		item.id = stableId;
 		item.openrgbHost = host;
 		item.openrgbPort = port;
-		item.image = getDeviceIconUrl(item.type);
+		item.icon = getDeviceIconUrl(item.type);
+		item.image = getBridgeDeviceIconUrl(item.type);
 		output.push(item);
 	}
 
@@ -1278,7 +1283,8 @@ function buildDeviceSummaries(devices) {
 			ledCount: getControllerLedCount(item),
 			zoneCount: item.zones ? item.zones.length : 0,
 			type: item.type !== undefined ? item.type : 19,
-			image: item.image || getDeviceIconUrl(item.type)
+			icon: item.icon || getDeviceIconUrl(item.type),
+			image: item.image || getBridgeDeviceIconUrl(item.type)
 		});
 	}
 
@@ -1288,6 +1294,11 @@ function buildDeviceSummaries(devices) {
 function getDeviceIconUrl(deviceType) {
 	const iconName = DeviceTypeIcon[Number(deviceType)] || "unknown";
 	return DEVICE_ICON_BASE_URL + iconName + ".svg";
+}
+
+function getBridgeDeviceIconUrl(deviceType) {
+	const iconName = DeviceTypeIcon[Number(deviceType)] || "unknown";
+	return BRIDGE_DEVICE_ICON_BASE_URL + iconName + ".svg";
 }
 
 function getDisabledDeviceSummaries(availableDevices, availableDeviceSummaries) {
