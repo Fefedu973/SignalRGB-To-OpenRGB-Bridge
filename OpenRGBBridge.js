@@ -1,4 +1,4 @@
-import { tcp } from "@SignalRGB/tcp";
+import tcp from "@SignalRGB/tcp";
 
 export function Name() { return "OpenRGB Bridge"; }
 export function Version() { return "2.0.0"; }
@@ -351,6 +351,11 @@ class OpenRGBClient {
 
 	connect() {
 		if (this.connected || this.connecting) {
+			return;
+		}
+
+		if (!tcp || typeof tcp.createSocket !== "function") {
+			this.reportError("SignalRGB TCP module is unavailable. Please update SignalRGB or install a build that supports network TCP addons.");
 			return;
 		}
 
