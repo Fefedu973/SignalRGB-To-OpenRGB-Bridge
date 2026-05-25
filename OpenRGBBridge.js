@@ -269,6 +269,17 @@ export function DiscoveryService() {
 		return JSON.stringify(deviceIds);
 	};
 
+	this.isDeviceSelected = function (deviceId) {
+		deviceId = String(deviceId || "");
+		this.selectedDevices = readSelectedDevices();
+		for (let i = 0; i < this.selectedDevices.length; i++) {
+			if (this.selectedDevices[i] && this.selectedDevices[i].deviceId === deviceId) {
+				return true;
+			}
+		}
+		return false;
+	};
+
 	this.toggleDevice = function (deviceId) {
 		this.selectedDevices = readSelectedDevices();
 		const selectedIndex = this.selectedDevices.findIndex(function (item) {

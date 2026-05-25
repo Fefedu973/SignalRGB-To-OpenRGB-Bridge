@@ -2,7 +2,7 @@ Item {
     anchors.fill: parent
 
     property var availableDevices: []
-    property var selectedDevices: []
+    property int availableDeviceCount: 0
     property string statusText: "Idle"
     property string lastDevicesJson: ""
     property string lastParseError: ""
@@ -45,41 +45,27 @@ Item {
         statusText = discovery.getStatus()
         var devicesJson = discovery.getAvailableDevicesJson()
         availableDevices = safeJsonParse(devicesJson, [])
-        selectedDevices = safeJsonParse(discovery.getSelectedDeviceIdsJson(), [])
+        availableDeviceCount = availableDevices.length
 
         if (devicesJson !== lastDevicesJson) {
             lastDevicesJson = devicesJson
-            rebuildDeviceModel(availableDevices)
-            logUi("OpenRGB Bridge UI loaded " + availableDevices.length + " device row(s).")
-        }
-    }
-
-    function rebuildDeviceModel(devices) {
-        deviceListModel.clear()
-        for (var i = 0; i < devices.length; i++) {
-            var item = devices[i] || {}
-            deviceListModel.append({
-                deviceId: String(item.deviceId || ""),
-                name: String(item.name || "OpenRGB Device"),
-                vendor: String(item.vendor || ""),
-                description: String(item.description || ""),
-                serial: String(item.serial || ""),
-                location: String(item.location || ""),
-                openrgbIndex: Number(item.openrgbIndex || 0),
-                ledCount: Number(item.ledCount || 0),
-                zoneCount: Number(item.zoneCount || 0)
-            })
+            logUi("OpenRGB Bridge UI loaded " + availableDeviceCount + " device row(s).")
         }
     }
 
     function isSelected(deviceId) {
-        for (var i = 0; i < selectedDevices.length; i++) {
-            var item = selectedDevices[i]
-            if (item === deviceId || (item && item.deviceId === deviceId)) {
-                return true
-            }
+        try {
+            return discovery.isDeviceSelected(String(deviceId || ""))
+        } catch (e) {
+            return false
         }
-        return false
+    }
+
+    function deviceAt(rowIndex) {
+        if (rowIndex < 0 || rowIndex >= availableDevices.length) {
+            return {}
+        }
+        return availableDevices[rowIndex] || {}
     }
 
     function refreshDevices() {
@@ -88,10 +74,6 @@ Item {
         logUi("Connect / Refresh clicked for OpenRGB at " + sdkServerIP.text + ":" + sdkServerPort.text + ".")
         discovery.refresh(sdkServerIP.text, sdkServerPort.text)
         refreshUi()
-    }
-
-    ListModel {
-        id: deviceListModel
     }
 
     Component.onCompleted: {
@@ -289,7 +271,7 @@ Item {
 
                 Text {
                     color: theme.primarytextcolor
-                    text: "Devices (" + deviceListModel.count + ")"
+                    text: "Devices (" + availableDeviceCount + ")"
                     font.pixelSize: 15
                     font.family: "Poppins"
                     font.bold: true
@@ -321,7 +303,7 @@ Item {
             }
 
             Text {
-                visible: deviceListModel.count === 0
+                visible: availableDeviceCount === 0
                 color: theme.secondarytextcolor
                 text: "No OpenRGB devices loaded yet. Click Connect / Refresh after starting the OpenRGB SDK server."
                 font.pixelSize: 13
@@ -332,13 +314,15 @@ Item {
 
             Repeater {
                 id: deviceRepeater
-                model: deviceListModel
+                model: availableDeviceCount
 
                 Rectangle {
+                    property var deviceInfo: deviceAt(index)
+
                     width: parent.width
                     height: 54
                     radius: 4
-                    color: isSelected(deviceId) ? "#209e20" : "#212d3a"
+                    color: isSelected(deviceInfo.deviceId) ? "#209e20" : "#212d3a"
                     border.color: "#2e3f4f"
                     border.width: 1
 
@@ -350,7 +334,7 @@ Item {
 
                         Text {
                             color: "white"
-                            text: name || "OpenRGB Device"
+                            text: String(deviceInfo.name || "OpenRGB Device")
                             font.pixelSize: 15
                             font.family: "Poppins"
                             font.bold: true
@@ -360,7 +344,7 @@ Item {
 
                         Text {
                             color: "#cbd5e1"
-                            text: (vendor ? vendor + " | " : "") + "Index " + openrgbIndex + " | " + ledCount + " LEDs | " + zoneCount + " zone(s) | " + deviceId
+                            text: (deviceInfo.vendor ? String(deviceInfo.vendor) + " | " : "") + "Index " + Number(deviceInfo.openrgbIndex || 0) + " | " + Number(deviceInfo.ledCount || 0) + " LEDs | " + Number(deviceInfo.zoneCount || 0) + " zone(s) | " + String(deviceInfo.deviceId || "")
                             font.pixelSize: 11
                             font.family: "Poppins"
                             width: parent.width
@@ -375,7 +359,7 @@ Item {
                         onEntered: parent.opacity = 0.85
                         onExited: parent.opacity = 1.0
                         onClicked: {
-                            discovery.toggleDevice(deviceId)
+                            discovery.toggleDevice(String(deviceInfo.deviceId || ""))
                             refreshUi()
                         }
                     }
