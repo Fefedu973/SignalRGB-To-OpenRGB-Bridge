@@ -34,6 +34,8 @@ const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/Signal
 const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
 const REQUEST_TIMEOUT_MS = 10000;
 const DISCOVERY_REQUEST_TIMEOUT_MS = 0;
+const DISCOVERY_PUMP_INTERVAL_MS = 1000;
+const DISCOVERY_PUMP_LOG_MS = 10000;
 
 const DeviceTypeIcon = {
 	0: "mainboard",
@@ -188,6 +190,7 @@ export function DiscoveryService() {
 	this.Update = function () {
 		if (this.client) {
 			this.client.checkRequestTimeouts();
+			this.client.pumpPendingRequests();
 		}
 		this.runPendingControllerRead();
 
@@ -319,6 +322,7 @@ export function DiscoveryService() {
 	this.getStatus = function () {
 		if (this.client) {
 			this.client.checkRequestTimeouts();
+			this.client.pumpPendingRequests();
 		}
 		this.runPendingControllerRead();
 
@@ -921,6 +925,9 @@ class OpenRGBClient {
 		const request = {
 			commandId: commandId,
 			deviceId: deviceId || 0,
+			createdAt: Date.now(),
+			lastPumpAt: 0,
+			lastPumpLogAt: 0,
 			timeoutAt: hasTimeout ? Date.now() + timeoutMs : 0,
 			callback: callback || function () {}
 		};
@@ -962,6 +969,33 @@ class OpenRGBClient {
 				clearTimeout(request.timeoutId);
 			}
 			request.callback(undefined, "OpenRGB request timed out: command " + request.commandId + " device " + request.deviceId);
+		}
+	}
+
+	pumpPendingRequests() {
+		if (!this.connected || !this.socket || !this.pending || this.pending.length === 0) {
+			return;
+		}
+
+		const now = Date.now();
+		for (let i = 0; i < this.pending.length; i++) {
+			const request = this.pending[i];
+			if (request.timeoutAt || request.commandId !== Command.requestControllerData) {
+				continue;
+			}
+
+			if (now - request.lastPumpAt < DISCOVERY_PUMP_INTERVAL_MS) {
+				return;
+			}
+
+			request.lastPumpAt = now;
+			if (now - request.lastPumpLogAt >= DISCOVERY_PUMP_LOG_MS) {
+				request.lastPumpLogAt = now;
+				this.logger("Waiting for OpenRGB controller " + (request.deviceId + 1) + "; pumping TCP receive.");
+			}
+
+			this.sendPacket(Command.setClientName, stringBytes(this.clientName), 0);
+			return;
 		}
 	}
 
