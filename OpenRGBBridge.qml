@@ -4,7 +4,7 @@ Item {
     property string statusText: "Idle"
     property int controllerCount: 0
     property int disabledDeviceCount: 0
-    property string lastDisabledDevicesJson: ""
+    property string lastInactiveDevicesSignature: ""
     property string lastParseError: ""
 
     function safeJsonParse(value, fallback) {
@@ -59,34 +59,91 @@ Item {
         refreshDisabledDevices()
     }
 
-    function readDisabledDevicesJson() {
+    function readAvailableDevicesJson() {
         try {
-            var value = discovery.getDisabledDevicesJson()
+            var value = discovery.getAvailableDevicesJson()
             if (value === undefined || value === null || value === "") {
                 return "[]"
             }
             return String(value)
         } catch (e) {
-            logUi("Failed to read disabled OpenRGB devices for UI: " + String(e))
+            logUi("Failed to read OpenRGB devices for inactive UI list: " + String(e))
             return "[]"
         }
     }
 
+    function controllerObjectAt(index) {
+        try {
+            if (controllerList.itemAtIndex) {
+                var row = controllerList.itemAtIndex(index)
+                if (row && row.openRgbController) {
+                    return row.openRgbController
+                }
+            }
+        } catch (e) {
+        }
+
+        try {
+            if (service.controllers && service.controllers.get) {
+                var item = service.controllers.get(index)
+                if (item && item.obj) {
+                    return item.obj
+                }
+                return item
+            }
+        } catch (e) {
+        }
+
+        try {
+            if (service.controllers && service.controllers[index]) {
+                var indexed = service.controllers[index]
+                if (indexed && indexed.obj) {
+                    return indexed.obj
+                }
+                return indexed
+            }
+        } catch (e) {
+        }
+
+        return null
+    }
+
+    function activeDeviceIds() {
+        var output = []
+
+        for (var i = 0; i < controllerList.count; i++) {
+            var item = controllerObjectAt(i)
+            var deviceId = item ? String(item.deviceId || item.id || "") : ""
+            if (deviceId !== "" && output.indexOf(deviceId) < 0) {
+                output.push(deviceId)
+            }
+        }
+
+        return output
+    }
+
     function refreshDisabledDevices() {
-        var devicesJson = readDisabledDevicesJson()
-        if (devicesJson === lastDisabledDevicesJson) {
+        var devicesJson = readAvailableDevicesJson()
+        var activeIds = activeDeviceIds()
+        var signature = devicesJson + "|" + activeIds.join(",")
+        if (signature === lastInactiveDevicesSignature) {
             disabledDeviceCount = disabledDeviceModel.count
             return
         }
 
-        lastDisabledDevicesJson = devicesJson
+        lastInactiveDevicesSignature = signature
         disabledDeviceModel.clear()
 
         var devices = safeJsonParse(devicesJson, [])
         for (var i = 0; i < devices.length; i++) {
             var item = devices[i] || {}
+            var deviceId = String(item.deviceId || "")
+            if (deviceId === "" || activeIds.indexOf(deviceId) >= 0) {
+                continue
+            }
+
             disabledDeviceModel.append({
-                "deviceId": String(item.deviceId || ""),
+                "deviceId": deviceId,
                 "name": String(item.name || "OpenRGB Device"),
                 "vendor": String(item.vendor || ""),
                 "openrgbIndex": Number(item.openrgbIndex || 0),
@@ -96,6 +153,7 @@ Item {
         }
 
         disabledDeviceCount = disabledDeviceModel.count
+        logUi("OpenRGB Bridge UI inactive model has " + disabledDeviceCount + " row(s) from " + devices.length + " known device(s) and " + activeIds.length + " active controller(s).")
     }
 
     function refreshDevices() {
@@ -450,7 +508,7 @@ Item {
                         font.bold: true
                         onClicked: {
                             discovery.restoreAllDevices()
-                            lastDisabledDevicesJson = ""
+                            lastInactiveDevicesSignature = ""
                             refreshUi()
                         }
                     }
@@ -521,7 +579,7 @@ Item {
                             font.bold: true
                             onClicked: {
                                 discovery.restoreDevice(String(deviceId || ""))
-                                lastDisabledDevicesJson = ""
+                                lastInactiveDevicesSignature = ""
                                 refreshUi()
                             }
                         }
