@@ -22,6 +22,8 @@ const PORT_SETTING = "SDKServerPort";
 const SELECTED_DEVICES_SETTING = "SelectedDevices";
 const LAST_DEVICES_SETTING = "LastDevices";
 const STATUS_SETTING = "Status";
+const SCAN_FLAG_SETTING = "ScanActive";
+const SCAN_FLAG_MAX_MS = 120000;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 6742;
 const CLIENT_PROTOCOL_VERSION = 5;
@@ -82,6 +84,8 @@ const Command = {
 let renderClient;
 let renderClientKey = "";
 let renderStates = {};
+let lastScanFlagCheck = 0;
+let scanActive = false;
 
 export function Initialize() {
 	device.setName(controller.name || "OpenRGB Device");
@@ -93,6 +97,13 @@ export function Initialize() {
 }
 
 export function Render() {
+	// Back off while a discovery scan is running so live rendering connections do not
+	// contend with the scan on the OpenRGB SDK server (the flag is shared via settings).
+	if (isScanActive()) {
+		device.pause(120);
+		return;
+	}
+
 	const client = ensureRenderClient(controller, logFromDevice);
 	if (!client) {
 		return;
@@ -175,6 +186,7 @@ export function DiscoveryService() {
 		port = normalizePort(port);
 		const refreshId = ++this.refreshId;
 		this.busy = true;
+		setScanActive(true);
 		this.bumpRevision();
 		saveSetting(HOST_SETTING, host);
 		saveSetting(PORT_SETTING, String(port));
@@ -188,6 +200,7 @@ export function DiscoveryService() {
 		const client = new OpenRGBClient({
 			host: host,
 			port: port,
+			clientName: CLIENT_NAME + " (Discovery)",
 			logger: logFromService,
 			onReady: function (client) {
 				if (self.refreshId !== refreshId || self.client !== client) {
@@ -263,12 +276,14 @@ export function DiscoveryService() {
 		const port = readNumberSetting(PORT_SETTING, DEFAULT_PORT);
 		this.setStatus("Requesting OpenRGB hardware rescan at " + host + ":" + port + "...");
 		this.busy = true;
+		setScanActive(true);
 		this.bumpRevision();
 
 		const self = this;
 		const client = new OpenRGBClient({
 			host: host,
 			port: port,
+			clientName: CLIENT_NAME + " (Rescan)",
 			logger: logFromService,
 			onReady: function (readyClient) {
 				readyClient.requestRescanDevices();
@@ -596,6 +611,7 @@ export function DiscoveryService() {
 
 	this.finishRefresh = function (client) {
 		this.busy = false;
+		setScanActive(false);
 		if (this.client === client) {
 			this.client = undefined;
 		}
@@ -671,6 +687,7 @@ class OpenRGBClient {
 	constructor(options) {
 		this.host = normalizeHost(options.host);
 		this.port = normalizePort(options.port);
+		this.clientName = options.clientName || CLIENT_NAME;
 		this.logger = options.logger || function () {};
 		this.onReady = options.onReady || function () {};
 		this.onError = options.onError || function () {};
@@ -766,7 +783,7 @@ class OpenRGBClient {
 				self.protocolVersion = Math.min(readU32(packet.payload, 0), CLIENT_PROTOCOL_VERSION);
 			}
 
-			self.sendPacket(Command.setClientName, stringBytes(CLIENT_NAME), 0);
+			self.sendPacket(Command.setClientName, stringBytes(self.clientName), 0);
 			self.ready = true;
 			self.logger("OpenRGB protocol v" + self.protocolVersion + " ready.");
 			self.onReady(self);
@@ -931,6 +948,7 @@ class OpenRGBClient {
 
 	getAllControllers(callback) {
 		const self = this;
+		const MAX_RETRY_ROUNDS = 2;
 		this.getControllerCount(function (count, countError) {
 			if (countError) {
 				callback([], countError);
@@ -939,26 +957,60 @@ class OpenRGBClient {
 
 			const devices = [];
 			self.onProgress("OpenRGB reported " + count + " controller(s).");
-			const loadNext = function (index) {
-				if (index >= count) {
-					callback(devices);
-					return;
-				}
 
-				self.onProgress("Reading OpenRGB controller " + (index + 1) + "/" + count + "...");
-				self.getControllerData(index, function (controllerData, error) {
-					if (error) {
-						self.logger("Skipping OpenRGB controller " + index + ": " + error);
-						loadNext(index + 1);
+			// Read a list of controller indices once, collecting the ones that fail.
+			const readPass = function (indices, round, done) {
+				const failed = [];
+				const step = function (i) {
+					if (i >= indices.length) {
+						done(failed);
 						return;
 					}
 
-					devices.push(controllerData);
-					loadNext(index + 1);
+					const index = indices[i];
+					self.onProgress(round === 0
+						? "Reading OpenRGB controller " + (index + 1) + "/" + count + "..."
+						: "Retrying OpenRGB controller " + (index + 1) + " (attempt " + (round + 1) + ")...");
+					self.getControllerData(index, function (controllerData, error) {
+						if (error) {
+							self.logger("OpenRGB controller " + index + " read failed: " + error);
+							failed.push(index);
+						} else {
+							devices.push(controllerData);
+						}
+						step(i + 1);
+					});
+				};
+				step(0);
+			};
+
+			// Devices often time out only because of transient contention with live
+			// rendering connections; by the time the first pass ends that has usually
+			// cleared, so retry the failed ones instead of dropping them.
+			const runRound = function (indices, round) {
+				readPass(indices, round, function (failed) {
+					if (failed.length > 0 && round < MAX_RETRY_ROUNDS) {
+						self.onProgress("Retrying " + failed.length + " OpenRGB controller(s) that timed out...");
+						runRound(failed, round + 1);
+						return;
+					}
+
+					if (failed.length > 0) {
+						self.logger("Gave up on " + failed.length + " OpenRGB controller(s) after retries: " + failed.join(", "));
+					}
+
+					devices.sort(function (a, b) {
+						return (a.openrgbIndex || 0) - (b.openrgbIndex || 0);
+					});
+					callback(devices);
 				});
 			};
 
-			loadNext(0);
+			const initial = [];
+			for (let i = 0; i < count; i++) {
+				initial.push(i);
+			}
+			runRound(initial, 0);
 		});
 	}
 
@@ -1004,6 +1056,22 @@ function getRenderStateKey(controllerData) {
 	return String(controllerData.deviceId || controllerData.id || controllerData.name || "openrgb-device");
 }
 
+// Reads the cross-context "a scan is in progress" flag, throttled so we are not hitting
+// the settings store on every render frame. Stale flags (a crashed scan) are ignored.
+function isScanActive() {
+	const now = Date.now();
+	if (now - lastScanFlagCheck > 200) {
+		lastScanFlagCheck = now;
+		const raw = parseInt(readSetting(SCAN_FLAG_SETTING, "0"), 10);
+		scanActive = !isNaN(raw) && raw > 0 && (now - raw) < SCAN_FLAG_MAX_MS;
+	}
+	return scanActive;
+}
+
+function setScanActive(active) {
+	saveSetting(SCAN_FLAG_SETTING, active ? String(Date.now()) : "0");
+}
+
 function ensureRenderClient(controllerData, logger) {
 	const host = normalizeHost(controllerData.openrgbHost || readSetting(HOST_SETTING, DEFAULT_HOST));
 	const port = normalizePort(controllerData.openrgbPort || readNumberSetting(PORT_SETTING, DEFAULT_PORT));
@@ -1017,10 +1085,13 @@ function ensureRenderClient(controllerData, logger) {
 		renderClient.close();
 	}
 
+	const deviceLabel = controllerData.name || controllerData.deviceId || "device";
+
 	renderClientKey = key;
 	renderClient = new OpenRGBClient({
 		host: host,
 		port: port,
+		clientName: CLIENT_NAME + " - " + deviceLabel,
 		logger: logger || logFromDevice,
 		onReady: function (client) {
 			for (const stateKey in renderStates) {
@@ -1082,6 +1153,9 @@ function setCustomModesForState(client, state) {
 
 function buildSignalRgbLayout(controllerData) {
 	const zones = controllerData.zones || [];
+	logFromDevice("Layout for " + (controllerData.name || controllerData.id) + ": " + zones.length + " zone(s) [" + zones.map(function (z) {
+		return (z.name || "?") + " type" + z.type + (z.matrix && z.matrix.width > 0 ? " matrix " + z.matrix.width + "x" + z.matrix.height : " linear");
+	}).join(", ") + "]");
 	const state = {
 		openrgbIndex: controllerData.openrgbIndex,
 		customModeSet: false,
@@ -1139,8 +1213,27 @@ function buildZoneLedMap(controllerData, zone, ledOffset) {
 	if (matrix && matrix.keys && matrix.width > 0 && matrix.height > 0) {
 		width = matrix.width;
 		height = matrix.height;
+
+		// Map each OpenRGB LED (stored in the matrix as its zone-local index) to its grid
+		// cell. Building value -> cell up front handles matrices whose values are not a
+		// contiguous 0..n-1 run (which broke the previous "search for index" approach and
+		// silently fell back to a flat strip), and avoids an O(n * cells) scan per zone.
+		const cellByLed = {};
+		for (let row = 0; row < matrix.keys.length; row++) {
+			const cols = matrix.keys[row] || [];
+			for (let col = 0; col < cols.length; col++) {
+				const value = cols[col];
+				if (value === null || value === undefined) {
+					continue;
+				}
+				if (cellByLed[value] === undefined) {
+					cellByLed[value] = [col, row];
+				}
+			}
+		}
+
 		for (let localIndex = 0; localIndex < count; localIndex++) {
-			const position = findMatrixPosition(matrix.keys, localIndex);
+			const position = cellByLed[localIndex] || [localIndex % width, Math.floor(localIndex / width)];
 			const led = leds[ledOffset + localIndex];
 			names.push(led ? led.name : ("LED " + (ledOffset + localIndex + 1)));
 			x.push(position[0]);
@@ -1751,18 +1844,6 @@ function removeLegacyOpenRgbControllers(devices) {
 			service.removeController(controllerToRemove);
 		}
 	}
-}
-
-function findMatrixPosition(matrix, ledIndex) {
-	for (let row = 0; row < matrix.length; row++) {
-		for (let col = 0; col < matrix[row].length; col++) {
-			if (matrix[row][col] === ledIndex) {
-				return [col, row];
-			}
-		}
-	}
-
-	return [ledIndex, 0];
 }
 
 function getZoneLedCount(zone) {
