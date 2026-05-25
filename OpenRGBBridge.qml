@@ -25,21 +25,20 @@ Item {
 
     function logUi(message) {
         try {
-            if (service && service.log) {
-                service.log(message)
+            if (discovery && discovery.logUi) {
+                discovery.logUi(message)
             }
         } catch (e) {
         }
     }
 
     function loadSettings() {
-        sdkServerIP.text = service.getSetting("General", "SDKServerIP") || "127.0.0.1"
-        sdkServerPort.text = service.getSetting("General", "SDKServerPort") || "6742"
+        sdkServerIP.text = String(discovery.getHost() || "127.0.0.1")
+        sdkServerPort.text = String(discovery.getPort() || "6742")
     }
 
     function saveSettings() {
-        service.saveSetting("General", "SDKServerIP", sdkServerIP.text)
-        service.saveSetting("General", "SDKServerPort", sdkServerPort.text)
+        discovery.saveConnectionSettings(sdkServerIP.text, sdkServerPort.text)
     }
 
     function refreshUi() {

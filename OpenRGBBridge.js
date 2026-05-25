@@ -217,12 +217,31 @@ export function DiscoveryService() {
 		this.setStatus("Connect to OpenRGB before requesting a rescan.");
 	};
 
+	this.getHost = function () {
+		return normalizeHost(readSetting(HOST_SETTING, DEFAULT_HOST));
+	};
+
+	this.getPort = function () {
+		return String(readNumberSetting(PORT_SETTING, DEFAULT_PORT));
+	};
+
+	this.saveConnectionSettings = function (host, port) {
+		host = normalizeHost(host);
+		port = normalizePort(port);
+		saveSetting(HOST_SETTING, host);
+		saveSetting(PORT_SETTING, String(port));
+	};
+
+	this.logUi = function (message) {
+		logFromService(String(message || ""));
+	};
+
 	this.getStatus = function () {
 		if (this.client) {
 			this.client.checkRequestTimeouts();
 		}
 
-		return this.status || readSetting(STATUS_SETTING, "Idle");
+		return String(this.status || readSetting(STATUS_SETTING, "Idle"));
 	};
 
 	this.getAvailableDevicesJson = function () {
@@ -241,9 +260,13 @@ export function DiscoveryService() {
 
 	this.getSelectedDeviceIdsJson = function () {
 		this.selectedDevices = readSelectedDevices();
-		return JSON.stringify(this.selectedDevices.map(function (item) {
-			return item.deviceId;
-		}));
+		const deviceIds = [];
+		for (let i = 0; i < this.selectedDevices.length; i++) {
+			if (this.selectedDevices[i] && this.selectedDevices[i].deviceId) {
+				deviceIds.push(String(this.selectedDevices[i].deviceId));
+			}
+		}
+		return JSON.stringify(deviceIds);
 	};
 
 	this.toggleDevice = function (deviceId) {
