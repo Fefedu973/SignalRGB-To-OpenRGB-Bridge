@@ -178,6 +178,7 @@ export function DiscoveryService() {
 	this.refreshId = 0;
 	this.revision = 1;
 	this.busy = false;
+	this.pendingControllerRead = undefined;
 
 	this.Initialize = function () {
 		this.connectSelectedDevices();
@@ -187,6 +188,7 @@ export function DiscoveryService() {
 		if (this.client) {
 			this.client.checkRequestTimeouts();
 		}
+		this.runPendingControllerRead();
 
 		if (this.firstUpdate) {
 			this.firstUpdate = false;
@@ -220,42 +222,7 @@ export function DiscoveryService() {
 					return;
 				}
 
-				self.setStatus("Connected. Letting live rendering release devices...");
-				// Give the device render contexts a beat to notice the scan flag and close
-				// their connections before we read, so streamed devices are not locked.
-				setTimeout(function () {
-					if (self.refreshId !== refreshId || self.client !== client) {
-						return;
-					}
-
-					self.setStatus("Reading OpenRGB controllers...");
-					client.getAllControllers(function (devices, error) {
-					if (self.refreshId !== refreshId || self.client !== client) {
-						return;
-					}
-
-					if (error) {
-						self.setStatus(error);
-						self.finishRefresh(client);
-						return;
-					}
-
-					self.availableDevices = assignStableDeviceIds(devices, host, port);
-					self.availableDeviceSummaries = buildDeviceSummaries(self.availableDevices);
-					saveSetting(LAST_DEVICES_SETTING, JSON.stringify(self.availableDeviceSummaries));
-					const selectedBeforeRefresh = self.selectedDevices.length > 0 ? self.selectedDevices : readSelectedDevices();
-					self.hasStoredSelectedDevices = self.hasStoredSelectedDevices || hasStoredSelectedDevices();
-					removeStaleControllers(selectedBeforeRefresh, self.availableDevices);
-					self.selectedDevices = self.hasStoredSelectedDevices
-						? getSelectedDevicesById(self.availableDevices, selectedBeforeRefresh)
-						: self.availableDeviceSummaries.slice(0);
-					saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(self.selectedDevices));
-					self.hasStoredSelectedDevices = true;
-					self.syncControllers();
-					self.finishRefresh(client);
-					self.setStatus("Found " + self.availableDevices.length + " OpenRGB device(s). SignalRGB controllers updated.");
-				});
-				}, 700);
+				self.queueControllerRead(client, refreshId, host, port);
 			},
 			onError: function (message) {
 				if (self.refreshId !== refreshId || self.client !== client) {
@@ -352,6 +319,7 @@ export function DiscoveryService() {
 		if (this.client) {
 			this.client.checkRequestTimeouts();
 		}
+		this.runPendingControllerRead();
 
 		return String(this.status || readSetting(STATUS_SETTING, "Idle"));
 	};
@@ -634,6 +602,9 @@ export function DiscoveryService() {
 	this.finishRefresh = function (client) {
 		this.busy = false;
 		setScanActive(false);
+		if (this.pendingControllerRead && this.pendingControllerRead.client === client) {
+			this.pendingControllerRead = undefined;
+		}
 		if (this.client === client) {
 			this.client = undefined;
 		}
@@ -646,6 +617,70 @@ export function DiscoveryService() {
 	this.bumpRevision = function () {
 		this.revision++;
 		return this.revision;
+	};
+
+	this.queueControllerRead = function (client, refreshId, host, port) {
+		this.pendingControllerRead = {
+			client: client,
+			refreshId: refreshId,
+			host: host,
+			port: port,
+			readAfter: Date.now() + 700
+		};
+		this.setStatus("Connected. Letting live rendering release devices...");
+		this.bumpRevision();
+	};
+
+	this.runPendingControllerRead = function () {
+		const pending = this.pendingControllerRead;
+		if (!pending) {
+			return false;
+		}
+
+		if (this.refreshId !== pending.refreshId || this.client !== pending.client) {
+			this.pendingControllerRead = undefined;
+			return false;
+		}
+
+		if (Date.now() < pending.readAfter) {
+			return false;
+		}
+
+		this.pendingControllerRead = undefined;
+		const self = this;
+		const client = pending.client;
+		const refreshId = pending.refreshId;
+		const host = pending.host;
+		const port = pending.port;
+
+		this.setStatus("Reading OpenRGB controllers...");
+		client.getAllControllers(function (devices, error) {
+			if (self.refreshId !== refreshId || self.client !== client) {
+				return;
+			}
+
+			if (error) {
+				self.setStatus(error);
+				self.finishRefresh(client);
+				return;
+			}
+
+			self.availableDevices = assignStableDeviceIds(devices, host, port);
+			self.availableDeviceSummaries = buildDeviceSummaries(self.availableDevices);
+			saveSetting(LAST_DEVICES_SETTING, JSON.stringify(self.availableDeviceSummaries));
+			const selectedBeforeRefresh = self.selectedDevices.length > 0 ? self.selectedDevices : readSelectedDevices();
+			self.hasStoredSelectedDevices = self.hasStoredSelectedDevices || hasStoredSelectedDevices();
+			removeStaleControllers(selectedBeforeRefresh, self.availableDevices);
+			self.selectedDevices = self.hasStoredSelectedDevices
+				? getSelectedDevicesById(self.availableDevices, selectedBeforeRefresh)
+				: self.availableDeviceSummaries.slice(0);
+			saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(self.selectedDevices));
+			self.hasStoredSelectedDevices = true;
+			self.syncControllers();
+			self.finishRefresh(client);
+			self.setStatus("Found " + self.availableDevices.length + " OpenRGB device(s). SignalRGB controllers updated.");
+		});
+		return true;
 	};
 }
 
