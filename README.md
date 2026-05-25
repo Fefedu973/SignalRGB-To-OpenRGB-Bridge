@@ -4,7 +4,7 @@ SignalRGB To OpenRGB Bridge is a SignalRGB addon that exposes devices supported 
 
 Use it to fill support gaps in your setup: GPUs, keyboards, LED controllers, motherboard headers, custom Visual Map layouts, or any other device that works in OpenRGB but is not currently supported directly by SignalRGB.
 
-[![Add To Installation](https://marketplace.signalrgb.com/resources/add-extension-256.png "Add to My SignalRGB Installation")](signalrgb://addon/install?url=https://github.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge)
+[![Add To SignalRGB](https://marketplace.signalrgb.com/resources/add-extension-256.png "Add to My SignalRGB Installation")](https://srgbmods.net/s?p=addon/install?url=https://github.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge)
 
 ## Features
 
