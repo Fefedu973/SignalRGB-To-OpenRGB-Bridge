@@ -169,8 +169,11 @@ export function DiscoveryService() {
 					self.availableDevices = assignStableDeviceIds(devices, host, port);
 					self.availableDeviceSummaries = buildDeviceSummaries(self.availableDevices);
 					saveSetting(LAST_DEVICES_SETTING, JSON.stringify(self.availableDeviceSummaries));
-					self.setStatus("Found " + self.availableDevices.length + " OpenRGB device(s). Device list updated.");
+					removeStaleControllers(readSelectedDevices(), self.availableDevices);
+					self.selectedDevices = self.availableDevices.slice(0);
+					saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(self.selectedDevices));
 					self.connectSelectedDevices();
+					self.setStatus("Found " + self.availableDevices.length + " OpenRGB device(s). SignalRGB controllers updated.");
 				});
 			},
 			onError: function (message) {
@@ -321,7 +324,6 @@ export function DiscoveryService() {
 		const controllerToRemove = service.getController(deviceId);
 		if (controllerToRemove !== undefined) {
 			service.removeController(controllerToRemove);
-			service.suppressController(controllerToRemove);
 		}
 
 		this.selectedDevices = readSelectedDevices().filter(function (item) {
@@ -338,7 +340,6 @@ export function DiscoveryService() {
 			const controllerToRemove = service.getController(this.selectedDevices[i].deviceId);
 			if (controllerToRemove !== undefined) {
 				service.removeController(controllerToRemove);
-				service.suppressController(controllerToRemove);
 			}
 		}
 
@@ -361,13 +362,18 @@ export function DiscoveryService() {
 			return "";
 		}
 
-		const existing = service.getController(deviceData.deviceId);
-		if (existing !== undefined) {
-			service.removeController(existing);
-			service.suppressController(existing);
+		const openRgbController = new OpenRGBController(deviceData);
+		if (typeof service.hasController === "function" && service.hasController(deviceData.deviceId)) {
+			service.updateController(openRgbController);
+			return deviceData.deviceId;
 		}
 
-		const openRgbController = new OpenRGBController(deviceData);
+		const existing = service.getController(deviceData.deviceId);
+		if (existing !== undefined) {
+			service.updateController(openRgbController);
+			return deviceData.deviceId;
+		}
+
 		service.addController(openRgbController);
 		service.announceController(openRgbController);
 		return deviceData.deviceId;
@@ -1204,6 +1210,27 @@ function buildDeviceSummaries(devices) {
 	}
 
 	return output;
+}
+
+function removeStaleControllers(previousDevices, currentDevices) {
+	const currentIds = {};
+	for (let i = 0; i < currentDevices.length; i++) {
+		if (currentDevices[i] && currentDevices[i].deviceId) {
+			currentIds[currentDevices[i].deviceId] = true;
+		}
+	}
+
+	for (let i = 0; i < previousDevices.length; i++) {
+		const previousDevice = previousDevices[i] || {};
+		if (!previousDevice.deviceId || currentIds[previousDevice.deviceId]) {
+			continue;
+		}
+
+		const controllerToRemove = service.getController(previousDevice.deviceId);
+		if (controllerToRemove !== undefined) {
+			service.removeController(controllerToRemove);
+		}
+	}
 }
 
 function findMatrixPosition(matrix, ledIndex) {
