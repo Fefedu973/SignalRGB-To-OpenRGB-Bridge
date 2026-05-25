@@ -1267,7 +1267,7 @@ function getDisabledDeviceSummaries(availableDevices, availableDeviceSummaries) 
 
 	for (let i = 0; i < summaries.length; i++) {
 		const item = summaries[i] || {};
-		if (disabledIds.indexOf(item.deviceId) >= 0) {
+		if (item.deviceId && (disabledIds.indexOf(item.deviceId) >= 0 || service.getController(item.deviceId) === undefined)) {
 			output.push(item);
 		}
 	}

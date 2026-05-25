@@ -209,7 +209,7 @@ Item {
                 }
 
                 Rectangle {
-                    width: 160
+                    width: 140
                     height: 32
                     radius: 3
                     border.color: "#444444"
