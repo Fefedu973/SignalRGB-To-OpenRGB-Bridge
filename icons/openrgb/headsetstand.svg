@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="26"
+   height="26"
+   viewBox="0 0 6.8791668 6.8791668"
+   version="1.1"
+   id="svg5"
+   xml:space="preserve"
+   inkscape:export-filename="cooler.svg"
+   inkscape:export-xdpi="25.4"
+   inkscape:export-ydpi="25.4"
+   sodipodi:docname="headsetstand.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     showgrid="false" /><defs
+     id="defs2" /><g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-95.818476,-112.24157)"><g
+       inkscape:label="Layer 1"
+       id="layer1-7"
+       transform="matrix(0.78723885,0,0,0.78723885,3.3505451,10.052795)"><g
+         style="fill:none"
+         id="g2173"
+         transform="matrix(0.26458333,0,0,0.26458333,118.5985,130.04991)"><path
+           fill-rule="evenodd"
+           clip-rule="evenodd"
+           d="m 17.204926,21 c -1.1046,0 -2,-0.8954 -2,-2 v -4 c 0,-1.1046 0.8954,-2 2,-2 h 2 v -1 c 0,-3.86599 -3.134,-7 -7,-7 -3.8659899,0 -6.9999999,3.13401 -6.9999999,7 v 1 h 2 c 1.10457,0 2,0.8954 2,2 v 4 c 0,1.1046 -0.89543,2 -2,2 h -4 v -9 c 0,-4.97056 4.02944,-9 8.9999999,-9 4.9706,0 9,4.02944 9,9 v 9 z m 2,-6 h -2 v 4 h 2 z M 7.2049261,15 h -2 v 4 h 2 z"
+           fill="currentColor"
+           id="path2164" /></g><g
+         style="fill:none"
+         id="g2187"
+         transform="matrix(0,0.26458333,-0.26458333,0,123.09642,131.62318)"><path
+           d="m 3,4.7950867 c 0,0.55228 0.44772,1 1,1 h 16 c 0.5523,0 1,-0.44772 1,-1 0,-0.55228 -0.4477,-1 -1,-1 H 4 c -0.55228,0 -1,0.44772 -1,1 z"
+           fill="currentColor"
+           id="path2175" /></g><g
+         style="fill:none"
+         id="g2191"
+         transform="matrix(-0.26458333,0,0,-0.26458333,125.05694,138.56616)"><path
+           d="m 3.2049261,5 c 0,0.55228 0.44772,1 1,1 H 20.204926 c 0.5523,0 1,-0.44772 1,-1 0,-0.55228 -0.4477,-1 -1,-1 H 4.2049261 c -0.55228,0 -1,0.44772 -1,1 z"
+           fill="currentColor"
+           id="path2189" /></g></g></g></svg>

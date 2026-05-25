@@ -28,7 +28,33 @@ const DEFAULT_PORT = 6742;
 const CLIENT_PROTOCOL_VERSION = 5;
 const CLIENT_NAME = "SignalRGB OpenRGB Bridge";
 const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/signalbridge.png";
+const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb/";
 const REQUEST_TIMEOUT_MS = 3000;
+
+const DeviceTypeIcon = {
+	0: "mainboard",
+	1: "dram",
+	2: "gpu",
+	3: "cooler",
+	4: "ledstrip",
+	5: "keyboard",
+	6: "mouse",
+	7: "mousemat",
+	8: "headset",
+	9: "headsetstand",
+	10: "gamepad",
+	11: "bulb",
+	12: "music_speaker",
+	13: "controller",
+	14: "drive",
+	15: "pc_case",
+	16: "mic",
+	17: "usb",
+	18: "keypad",
+	19: "unknown",
+	20: "laptop",
+	21: "monitor"
+};
 
 const Command = {
 	requestControllerCount: 0,
@@ -446,13 +472,13 @@ class OpenRGBController {
 		this.version = deviceData.version || "";
 		this.serial = deviceData.serial || "";
 		this.location = deviceData.location || "";
-		this.type = deviceData.type || 15;
+		this.type = deviceData.type !== undefined ? deviceData.type : 19;
 		this.activeMode = deviceData.activeMode || 0;
 		this.modes = deviceData.modes || [];
 		this.zones = deviceData.zones || [];
 		this.leds = deviceData.leds || [];
 		this.colors = deviceData.colors || [];
-		this.image = ICON_URL;
+		this.image = getDeviceIconUrl(this.type);
 	}
 
 	updateWithValue(deviceData) {
@@ -964,7 +990,7 @@ function parseControllerData(payload, deviceIndex, protocolVersion) {
 	const reader = new ByteReader(payload);
 	const controllerData = {
 		openrgbIndex: deviceIndex,
-		type: 15,
+		type: 19,
 		name: "",
 		vendor: "",
 		description: "",
@@ -1224,7 +1250,7 @@ function assignStableDeviceIds(devices, host, port) {
 		item.id = stableId;
 		item.openrgbHost = host;
 		item.openrgbPort = port;
-		item.image = ICON_URL;
+		item.image = getDeviceIconUrl(item.type);
 		output.push(item);
 	}
 
@@ -1251,11 +1277,17 @@ function buildDeviceSummaries(devices) {
 			openrgbPort: item.openrgbPort || DEFAULT_PORT,
 			ledCount: getControllerLedCount(item),
 			zoneCount: item.zones ? item.zones.length : 0,
-			type: item.type || 15
+			type: item.type !== undefined ? item.type : 19,
+			image: item.image || getDeviceIconUrl(item.type)
 		});
 	}
 
 	return output;
+}
+
+function getDeviceIconUrl(deviceType) {
+	const iconName = DeviceTypeIcon[Number(deviceType)] || "unknown";
+	return DEVICE_ICON_BASE_URL + iconName + ".svg";
 }
 
 function getDisabledDeviceSummaries(availableDevices, availableDeviceSummaries) {

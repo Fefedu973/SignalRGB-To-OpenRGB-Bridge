@@ -5,6 +5,7 @@ Item {
     property int controllerCount: 0
     property int disabledDeviceCount: 0
     property string lastInactiveDevicesSignature: ""
+    property string lastKnownDevicesJson: "[]"
     property string lastParseError: ""
 
     function safeJsonParse(value, fallback) {
@@ -124,17 +125,24 @@ Item {
 
     function refreshDisabledDevices() {
         var devicesJson = readAvailableDevicesJson()
+        var devices = safeJsonParse(devicesJson, [])
+        if (devices.length > 0) {
+            lastKnownDevicesJson = devicesJson
+        } else {
+            devicesJson = lastKnownDevicesJson
+            devices = safeJsonParse(devicesJson, [])
+        }
+
         var activeIds = activeDeviceIds()
         var signature = devicesJson + "|" + activeIds.join(",")
         if (signature === lastInactiveDevicesSignature) {
-            disabledDeviceCount = disabledDeviceModel.count
             return
         }
 
         lastInactiveDevicesSignature = signature
-        disabledDeviceModel.clear()
+        clearInactiveDeviceRows()
 
-        var devices = safeJsonParse(devicesJson, [])
+        var inactiveCount = 0
         for (var i = 0; i < devices.length; i++) {
             var item = devices[i] || {}
             var deviceId = String(item.deviceId || "")
@@ -142,18 +150,32 @@ Item {
                 continue
             }
 
-            disabledDeviceModel.append({
+            var row = inactiveDeviceRowComponent.createObject(inactiveDeviceListColumn, {
                 "deviceId": deviceId,
                 "name": String(item.name || "OpenRGB Device"),
                 "vendor": String(item.vendor || ""),
                 "openrgbIndex": Number(item.openrgbIndex || 0),
                 "ledCount": Number(item.ledCount || 0),
-                "zoneCount": Number(item.zoneCount || 0)
+                "zoneCount": Number(item.zoneCount || 0),
+                "iconSource": String(item.image || "")
             })
+
+            if (row !== null) {
+                inactiveCount++
+            } else {
+                logUi("Failed to create inactive OpenRGB device row " + i + ".")
+            }
         }
 
-        disabledDeviceCount = disabledDeviceModel.count
+        disabledDeviceCount = inactiveCount
         logUi("OpenRGB Bridge UI inactive model has " + disabledDeviceCount + " row(s) from " + devices.length + " known device(s) and " + activeIds.length + " active controller(s).")
+    }
+
+    function clearInactiveDeviceRows() {
+        for (var i = inactiveDeviceListColumn.children.length - 1; i >= 0; i--) {
+            inactiveDeviceListColumn.children[i].visible = false
+            inactiveDeviceListColumn.children[i].destroy()
+        }
     }
 
     function refreshDevices() {
@@ -178,8 +200,87 @@ Item {
         onTriggered: refreshUi()
     }
 
-    ListModel {
-        id: disabledDeviceModel
+    Component {
+        id: inactiveDeviceRowComponent
+
+        Rectangle {
+            property string deviceId: ""
+            property string name: "OpenRGB Device"
+            property string vendor: ""
+            property int openrgbIndex: 0
+            property int ledCount: 0
+            property int zoneCount: 0
+            property string iconSource: ""
+
+            width: inactiveDeviceListColumn.width
+            height: 62
+            radius: 4
+            color: "#1c2530"
+            border.color: "#3f4c5a"
+            border.width: 1
+
+            Image {
+                x: 12
+                y: 13
+                width: 36
+                height: 36
+                source: iconSource
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+            }
+
+            Column {
+                x: 60
+                y: 7
+                width: parent.width - 220
+                spacing: 2
+
+                Text {
+                    color: "#dbeafe"
+                    text: String(name || "OpenRGB Device")
+                    font.pixelSize: 15
+                    font.family: "Poppins"
+                    font.bold: true
+                    width: parent.width
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    color: "#94a3b8"
+                    text: (vendor ? String(vendor) + " | " : "") + "Index " + Number(openrgbIndex || 0) + " | " + Number(ledCount || 0) + " LEDs | " + Number(zoneCount || 0) + " zone(s) | " + String(deviceId || "")
+                    font.pixelSize: 11
+                    font.family: "Poppins"
+                    width: parent.width
+                    elide: Text.ElideRight
+                }
+            }
+
+            Item {
+                width: 90
+                height: 30
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "#15803d"
+                    radius: 3
+                }
+
+                ToolButton {
+                    anchors.fill: parent
+                    text: "Restore"
+                    font.family: "Poppins"
+                    font.bold: true
+                    onClicked: {
+                        discovery.restoreDevice(String(deviceId || ""))
+                        lastInactiveDevicesSignature = ""
+                        refreshUi()
+                    }
+                }
+            }
+        }
     }
 
     Flickable {
@@ -419,10 +520,20 @@ Item {
                     border.color: "#2e3f4f"
                     border.width: 1
 
-                    Column {
+                    Image {
                         x: 12
+                        y: 13
+                        width: 36
+                        height: 36
+                        source: String(openRgbController.image || "")
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                    }
+
+                    Column {
+                        x: 60
                         y: 7
-                        width: parent.width - 160
+                        width: parent.width - 220
                         spacing: 2
 
                         Text {
@@ -473,9 +584,8 @@ Item {
             }
 
             Item {
-                visible: disabledDeviceCount > 0
                 width: parent.width
-                height: visible ? 34 : 0
+                height: 34
 
                 Text {
                     anchors.left: parent.left
@@ -515,76 +625,20 @@ Item {
                 }
             }
 
-            ListView {
-                id: disabledDeviceList
-                visible: disabledDeviceCount > 0
-                model: disabledDeviceModel
+            Text {
+                visible: disabledDeviceCount === 0
+                color: theme.secondarytextcolor
+                text: "No deleted OpenRGB devices."
+                font.pixelSize: 13
+                font.family: "Poppins"
                 width: parent.width
-                height: visible ? count * 70 : 0
-                interactive: false
-                clip: false
+                wrapMode: Text.WordWrap
+            }
+
+            Column {
+                id: inactiveDeviceListColumn
+                width: parent.width
                 spacing: 8
-
-                delegate: Rectangle {
-                    width: disabledDeviceList.width
-                    height: 62
-                    radius: 4
-                    color: "#1c2530"
-                    border.color: "#3f4c5a"
-                    border.width: 1
-
-                    Column {
-                        x: 12
-                        y: 7
-                        width: parent.width - 160
-                        spacing: 2
-
-                        Text {
-                            color: "#dbeafe"
-                            text: String(name || "OpenRGB Device")
-                            font.pixelSize: 15
-                            font.family: "Poppins"
-                            font.bold: true
-                            width: parent.width
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            color: "#94a3b8"
-                            text: (vendor ? String(vendor) + " | " : "") + "Index " + Number(openrgbIndex || 0) + " | " + Number(ledCount || 0) + " LEDs | " + Number(zoneCount || 0) + " zone(s) | " + String(deviceId || "")
-                            font.pixelSize: 11
-                            font.family: "Poppins"
-                            width: parent.width
-                            elide: Text.ElideRight
-                        }
-                    }
-
-                    Item {
-                        width: 90
-                        height: 30
-                        anchors.right: parent.right
-                        anchors.rightMargin: 12
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Rectangle {
-                            anchors.fill: parent
-                            color: "#15803d"
-                            radius: 3
-                        }
-
-                        ToolButton {
-                            anchors.fill: parent
-                            text: "Restore"
-                            font.family: "Poppins"
-                            font.bold: true
-                            onClicked: {
-                                discovery.restoreDevice(String(deviceId || ""))
-                                lastInactiveDevicesSignature = ""
-                                refreshUi()
-                            }
-                        }
-                    }
-                }
             }
         }
     }

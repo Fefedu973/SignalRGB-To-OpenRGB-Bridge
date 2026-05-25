@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="26"
+   height="26"
+   viewBox="0 0 6.8791668 6.8791668"
+   version="1.1"
+   id="svg5"
+   xml:space="preserve"
+   inkscape:export-filename="mainboard.svg"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   sodipodi:docname="headsetstand.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     showgrid="false" /><defs
+     id="defs2" /><g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-95.818476,-112.24157)"><g
+       inkscape:label="Layer 1"
+       id="layer1-6"
+       transform="matrix(0.38411782,0,0,0.38411782,51.225919,61.522265)"><g
+         style="fill:none"
+         id="g1937"
+         transform="matrix(0.57131758,0,0,0.57131758,118.18952,134.1397)"><path
+           fill-rule="evenodd"
+           clip-rule="evenodd"
+           d="M 0,5 C 0,3.34315 1.34315,2 3,2 h 18 c 1.6569,0 3,1.34315 3,3 v 14 c 0,1.6569 -1.3431,3 -3,3 H 3 C 1.34315,22 0,20.6569 0,19 Z M 3,4 h 18 c 0.5523,0 1,0.44772 1,1 v 14 c 0,0.5523 -0.4477,1 -1,1 H 3 C 2.44772,20 2,19.5523 2,19 V 5 C 2,4.44772 2.44771,4 3,4 Z"
+           fill="currentColor"
+           id="path1925" /></g><g
+         style="fill:none"
+         id="g1951"
+         transform="matrix(0.26458333,0,0,0.26458333,121.87033,137.82051)"><path
+           d="m 12,5 c -0.5523,0 -1,0.44772 -1,1 v 4 c 0,0.5523 0.4477,1 1,1 0.5523,0 1,-0.4477 1,-1 V 6 C 13,5.44772 12.5523,5 12,5 Z"
+           fill="currentColor"
+           id="path1939" /><path
+           fill-rule="evenodd"
+           clip-rule="evenodd"
+           d="m 4,8 c 0,-4.41828 3.58172,-8 8,-8 4.4183,0 8,3.58172 8,8 v 8 c 0,4.4183 -3.5817,8 -8,8 -4.41828,0 -8,-3.5817 -8,-8 z m 14,0 v 8 c 0,3.3137 -2.6863,6 -6,6 C 8.68629,22 6,19.3137 6,16 V 8 c 0,-3.31371 2.68629,-6 6,-6 3.3137,0 6,2.68629 6,6 z"
+           fill="currentColor"
+           id="path1941" /></g></g></g></svg>
