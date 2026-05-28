@@ -127,7 +127,7 @@ This repository is a SignalRGB addon. The important files are:
 - `OpenRGBBridge.js`: addon runtime, OpenRGB TCP client, codec, discovery, and rendering.
 - `OpenRGBBridge.qml`: settings UI.
 - `signalbridge.png`: addon image asset.
-- `tools/validate-openrgb-codec.js`: packet encoder validation.
+- `tools/validate-openrgb-codec.cjs`: packet encoder validation.
 
 No `node_modules` directory or generated server binary should be committed.
 

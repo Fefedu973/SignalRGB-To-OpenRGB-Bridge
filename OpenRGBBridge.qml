@@ -1,7 +1,7 @@
 Item {
     anchors.fill: parent
 
-    property string statusText: "Idle"
+    property string statusText: "Connecting..."
     property bool busy: false
     // Best-effort counts computed from service.controllers. -1 means "unknown"
     // (iteration unsupported); the lists themselves never depend on these.
@@ -20,9 +20,9 @@ Item {
     function readStatus() {
         try {
             var value = discovery.getStatus()
-            return value === undefined || value === null || value === "" ? "Idle" : String(value)
+            return value === undefined || value === null || value === "" ? "Connecting..." : String(value)
         } catch (e) {
-            return "Idle"
+            return "Connecting..."
         }
     }
 
@@ -77,7 +77,7 @@ Item {
 
     function refreshDevices() {
         saveSettings()
-        statusText = "Connect / Refresh clicked. Connecting to " + sdkServerIP.text + ":" + sdkServerPort.text + "..."
+        statusText = "Connecting to OpenRGB at " + sdkServerIP.text + ":" + sdkServerPort.text + "..."
         logUi("Connect / Refresh clicked for OpenRGB at " + sdkServerIP.text + ":" + sdkServerPort.text + ".")
         discovery.refresh(sdkServerIP.text, sdkServerPort.text)
         refreshStatusOnly()
