@@ -18,6 +18,16 @@ Item {
     }
 
     function readStatus() {
+        // Prefer service.getSetting because SignalRGB's QML bridge can cache the
+        // return value of discovery.getStatus(); the setting store always reflects
+        // the latest write from JS setStatus.
+        try {
+            var fromSetting = service.getSetting("General", "Status")
+            if (fromSetting !== undefined && fromSetting !== null && String(fromSetting) !== "") {
+                return String(fromSetting)
+            }
+        } catch (e) {
+        }
         try {
             var value = discovery.getStatus()
             return value === undefined || value === null || value === "" ? "Connecting..." : String(value)
@@ -104,7 +114,7 @@ Item {
     }
 
     Timer {
-        interval: 1000
+        interval: 250
         running: true
         repeat: true
         onTriggered: refreshStatusOnly()

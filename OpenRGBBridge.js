@@ -21,6 +21,10 @@ const HOST_SETTING = "SDKServerIP";
 const PORT_SETTING = "SDKServerPort";
 const SELECTED_DEVICES_SETTING = "SelectedDevices";
 const LAST_DEVICES_SETTING = "LastDevices";
+// Status is mirrored to a setting because SignalRGB's QML/JS bridge can cache the
+// return value of `discovery.getStatus()` for the lifetime of the QML page; reading
+// via `service.getSetting` in QML always returns the freshly-written value instead.
+const STATUS_SETTING = "Status";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 6742;
 const CLIENT_PROTOCOL_VERSION = 5;
@@ -140,6 +144,9 @@ export function DiscoveryService() {
 		this.selectedDevices = this.availableDeviceSummaries.slice(0);
 	}
 	this.status = buildLookingForStatus();
+	// Clear any leftover status from a previous session so QML does not flash a stale
+	// "Found N device(s)" or error message before the new scan starts.
+	saveSetting(STATUS_SETTING, this.status);
 	this.client = undefined;
 	this.refreshId = 0;
 	this.busy = false;
@@ -510,6 +517,9 @@ export function DiscoveryService() {
 
 	this.setStatus = function (message) {
 		this.status = String(message || "");
+		// Mirror to a setting so QML can read the live value via `service.getSetting`
+		// (the discovery.getStatus() QML bridge call is unreliable for live updates).
+		saveSetting(STATUS_SETTING, this.status);
 		logFromService(this.status);
 		return this.status;
 	};
