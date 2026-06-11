@@ -21,15 +21,23 @@ const HOST_SETTING = "SDKServerIP";
 const PORT_SETTING = "SDKServerPort";
 const SELECTED_DEVICES_SETTING = "SelectedDevices";
 const LAST_DEVICES_SETTING = "LastDevices";
-// Status is mirrored to a setting because SignalRGB's QML/JS bridge can cache the
-// return value of `discovery.getStatus()` for the lifetime of the QML page; reading
-// via `service.getSetting` in QML always returns the freshly-written value instead.
-const STATUS_SETTING = "Status";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 6742;
 const CLIENT_PROTOCOL_VERSION = 5;
 const CLIENT_NAME = "SignalRGB OpenRGB Bridge";
 const BRIDGE_CONTROLLER_ID = "openrgb-bridge";
+// Hidden carrier registered in `service.controllers` so QML can read the live status
+// via iteration (the only reliable JS→QML channel in SignalRGB; `discovery.getStatus()`
+// and `service.getSetting` return values are cached at the QML bridge layer). QML only
+// snapshots a controller's data when its row is ADDED — `service.updateController` does
+// not push later property changes across the bridge (the reference Govee plugin
+// refreshes QML the same way: removeController + addController). The re-publish must
+// NOT happen inside setStatus itself: status changes fire synchronously from QML-invoked
+// calls (refresh/rescan) and many times per scan, and yanking model rows out of the
+// page's ListViews mid-call crashes SignalRGB. Instead setStatus only bumps a revision
+// and the service's Update() tick re-publishes at most once per interval.
+const STATUS_CONTROLLER_ID = "openrgb-bridge-status";
+const STATUS_PUBLISH_INTERVAL_MS = 1000;
 const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/signalbridge.png";
 const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_white/";
 const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
@@ -144,12 +152,32 @@ export function DiscoveryService() {
 		this.selectedDevices = this.availableDeviceSummaries.slice(0);
 	}
 	this.status = buildLookingForStatus();
-	// Clear any leftover status from a previous session so QML does not flash a stale
-	// "Found N device(s)" or error message before the new scan starts.
-	saveSetting(STATUS_SETTING, this.status);
 	this.client = undefined;
 	this.refreshId = 0;
 	this.busy = false;
+	// Register a hidden status controller so QML can render a reactive status text by
+	// iterating `service.controllers` (same pattern as the device lists). Without this,
+	// QML never sees status changes because `discovery.getStatus()` returns are cached
+	// by the SignalRGB QML/JS bridge for the lifetime of the page.
+	this.statusController = {
+		id: STATUS_CONTROLLER_ID,
+		deviceId: STATUS_CONTROLLER_ID,
+		name: "OpenRGB Bridge Status",
+		bridgeStatusBus: true,
+		bridgeStatus: this.status,
+		bridgeBusy: false,
+		bridgeStatusRevision: 0
+	};
+	this.lastStatusPublishAt = 0;
+	this.publishedStatusRevision = -1;
+	if (service.getController(STATUS_CONTROLLER_ID) === undefined) {
+		service.addController(this.statusController);
+		this.publishedStatusRevision = this.statusController.bridgeStatusRevision;
+	} else {
+		// A carrier from a previous session is still registered; leave the revision
+		// unpublished so the first Update() tick replaces it with this fresh object.
+		service.updateController(this.statusController);
+	}
 	// Drives the auto-reconnect loop in Update(): set to true whenever we need a fresh
 	// scan (cold start, after a failure, or after OpenRGB notifies of a device list
 	// change), cleared on success so we do not hammer OpenRGB once everything is in sync.
@@ -160,7 +188,29 @@ export function DiscoveryService() {
 		this.connectSelectedDevices();
 	};
 
+	// Re-publishes the status carrier (remove + add) so QML takes a fresh snapshot.
+	// Runs only from the service's own Update() tick — never from a QML-invoked call —
+	// and at most once per STATUS_PUBLISH_INTERVAL_MS, because pulling rows out of
+	// service.controllers while the QML page is using them crashes SignalRGB.
+	this.publishStatusIfDirty = function () {
+		if (!this.statusController) {
+			return;
+		}
+		if (this.publishedStatusRevision === this.statusController.bridgeStatusRevision) {
+			return;
+		}
+		const now = Date.now();
+		if (now - this.lastStatusPublishAt < STATUS_PUBLISH_INTERVAL_MS) {
+			return;
+		}
+		this.lastStatusPublishAt = now;
+		this.publishedStatusRevision = this.statusController.bridgeStatusRevision;
+		republishStatusController(this.statusController);
+	};
+
 	this.Update = function () {
+		this.publishStatusIfDirty();
+
 		if (this.client) {
 			this.client.checkRequestTimeouts();
 			return;
@@ -270,9 +320,9 @@ export function DiscoveryService() {
 	this.rescan = function () {
 		const host = normalizeHost(readSetting(HOST_SETTING, DEFAULT_HOST));
 		const port = readNumberSetting(PORT_SETTING, DEFAULT_PORT);
-		this.setStatus("Requesting OpenRGB hardware rescan at " + host + ":" + port + "...");
 		this.busy = true;
 		this.lastAutoAttemptAt = Date.now();
+		this.setStatus("Requesting OpenRGB hardware rescan at " + host + ":" + port + "...");
 
 		const self = this;
 		const client = new OpenRGBClient({
@@ -464,7 +514,7 @@ export function DiscoveryService() {
 		for (let i = existing.length - 1; i >= 0; i--) {
 			const entry = existing[i];
 			const id = entry ? (entry.id || (entry.obj && entry.obj.deviceId)) : undefined;
-			if (!id || id === BRIDGE_CONTROLLER_ID || knownIds[id]) {
+			if (!id || id === BRIDGE_CONTROLLER_ID || id === STATUS_CONTROLLER_ID || knownIds[id]) {
 				continue;
 			}
 
@@ -517,9 +567,13 @@ export function DiscoveryService() {
 
 	this.setStatus = function (message) {
 		this.status = String(message || "");
-		// Mirror to a setting so QML can read the live value via `service.getSetting`
-		// (the discovery.getStatus() QML bridge call is unreliable for live updates).
-		saveSetting(STATUS_SETTING, this.status);
+		if (this.statusController) {
+			this.statusController.bridgeStatus = this.status;
+			this.statusController.bridgeBusy = !!this.busy;
+			// Marks the carrier dirty; Update() re-publishes it to QML (throttled).
+			this.statusController.bridgeStatusRevision++;
+			service.updateController(this.statusController);
+		}
 		logFromService(this.status);
 		return this.status;
 	};
@@ -532,7 +586,24 @@ export function DiscoveryService() {
 		if (client) {
 			client.close();
 		}
+		if (this.statusController) {
+			this.statusController.bridgeBusy = false;
+			this.statusController.bridgeStatusRevision++;
+			service.updateController(this.statusController);
+		}
 	};
+}
+
+// QML only snapshots controller data when a row is added to `service.controllers`;
+// `service.updateController` does not propagate property changes to the QML page.
+// Removing and re-adding the carrier forces a fresh snapshot (same trick the official
+// Govee Direct Connect plugin uses in its `updatedController` handler).
+function republishStatusController(statusController) {
+	const existing = service.getController(STATUS_CONTROLLER_ID);
+	if (existing !== undefined) {
+		service.removeController(existing);
+	}
+	service.addController(statusController);
 }
 
 class OpenRGBController {

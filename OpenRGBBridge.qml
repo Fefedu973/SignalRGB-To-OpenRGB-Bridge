@@ -1,6 +1,7 @@
 Item {
     anchors.fill: parent
 
+    readonly property string statusControllerId: "openrgb-bridge-status"
     property string statusText: "Connecting..."
     property bool busy: false
     // Best-effort counts computed from service.controllers. -1 means "unknown"
@@ -17,43 +18,27 @@ Item {
         }
     }
 
-    function readStatus() {
-        // Prefer service.getSetting because SignalRGB's QML bridge can cache the
-        // return value of discovery.getStatus(); the setting store always reflects
-        // the latest write from JS setStatus.
-        try {
-            var fromSetting = service.getSetting("General", "Status")
-            if (fromSetting !== undefined && fromSetting !== null && String(fromSetting) !== "") {
-                return String(fromSetting)
-            }
-        } catch (e) {
-        }
-        try {
-            var value = discovery.getStatus()
-            return value === undefined || value === null || value === "" ? "Connecting..." : String(value)
-        } catch (e) {
-            return "Connecting..."
-        }
-    }
-
-    function readBusy() {
-        try {
-            return !!discovery.isBusy()
-        } catch (e) {
-            return false
-        }
-    }
-
-    // Both device lists are filtered views of SignalRGB's reactive service.controllers
-    // collection (the only reliable QML data channel). Counts are derived the same way.
-    function recountControllers() {
+    // Device counts, status text and busy flag are all harvested by iterating
+    // SignalRGB's service.controllers collection (the only reliable JS→QML data
+    // channel). The JS side re-publishes the hidden status-bus controller on every
+    // change, so each poll sees a fresh snapshot.
+    function refreshTransientState() {
         var active = 0
         var deleted = 0
+        var foundStatus = ""
+        var haveStatusBus = false
+        var statusBusBusy = false
         try {
             var controllers = service.controllers
             for (var i = 0; i < controllers.length; i++) {
                 var obj = controllers[i] ? controllers[i].obj : null
                 if (!obj) {
+                    continue
+                }
+                if (String(obj.id || "") === statusControllerId || obj.bridgeStatusBus) {
+                    haveStatusBus = true
+                    foundStatus = String(obj.bridgeStatus || "")
+                    statusBusBusy = !!obj.bridgeBusy
                     continue
                 }
                 if (obj.bridgeDeleted) {
@@ -68,12 +53,18 @@ Item {
             activeCount = -1
             deletedCount = -1
         }
+        if (foundStatus !== "") {
+            statusText = foundStatus
+        }
+        busy = haveStatusBus ? statusBusBusy : readBusy()
     }
 
-    function refreshStatusOnly() {
-        statusText = readStatus()
-        busy = readBusy()
-        recountControllers()
+    function readBusy() {
+        try {
+            return !!discovery.isBusy()
+        } catch (e) {
+            return false
+        }
     }
 
     function loadSettings() {
@@ -90,17 +81,17 @@ Item {
         statusText = "Connecting to OpenRGB at " + sdkServerIP.text + ":" + sdkServerPort.text + "..."
         logUi("Connect / Refresh clicked for OpenRGB at " + sdkServerIP.text + ":" + sdkServerPort.text + ".")
         discovery.refresh(sdkServerIP.text, sdkServerPort.text)
-        refreshStatusOnly()
+        refreshTransientState()
     }
 
     function deleteDevice(deviceId) {
         discovery.removeDevice(String(deviceId || ""))
-        refreshStatusOnly()
+        refreshTransientState()
     }
 
     function restoreDevice(deviceId) {
         discovery.restoreDevice(String(deviceId || ""))
-        refreshStatusOnly()
+        refreshTransientState()
     }
 
     function countLabel(value) {
@@ -114,10 +105,10 @@ Item {
     }
 
     Timer {
-        interval: 250
+        interval: 500
         running: true
         repeat: true
-        onTriggered: refreshStatusOnly()
+        onTriggered: refreshTransientState()
     }
 
     Flickable {
@@ -271,7 +262,7 @@ Item {
                         font.bold: true
                         onClicked: {
                             discovery.rescan()
-                            refreshStatusOnly()
+                            refreshTransientState()
                         }
                     }
                 }
@@ -323,7 +314,7 @@ Item {
                         font.bold: true
                         onClicked: {
                             discovery.removeAllDevices()
-                            refreshStatusOnly()
+                            refreshTransientState()
                         }
                     }
                 }
@@ -350,7 +341,8 @@ Item {
 
                 delegate: Item {
                     property var ctrl: model.modelData.obj
-                    property bool isActive: ctrl ? !ctrl.bridgeDeleted : false
+                    property bool isStatusBus: ctrl ? (String(ctrl.id || "") === statusControllerId || !!ctrl.bridgeStatusBus) : false
+                    property bool isActive: ctrl ? (!ctrl.bridgeDeleted && !isStatusBus) : false
 
                     width: activeDeviceList.width
                     height: isActive ? 70 : 0
@@ -464,7 +456,7 @@ Item {
                         font.bold: true
                         onClicked: {
                             discovery.restoreAllDevices()
-                            refreshStatusOnly()
+                            refreshTransientState()
                         }
                     }
                 }
@@ -491,7 +483,8 @@ Item {
 
                 delegate: Item {
                     property var ctrl: model.modelData.obj
-                    property bool isDeleted: ctrl ? !!ctrl.bridgeDeleted : false
+                    property bool isStatusBus: ctrl ? (String(ctrl.id || "") === statusControllerId || !!ctrl.bridgeStatusBus) : false
+                    property bool isDeleted: ctrl ? (!!ctrl.bridgeDeleted && !isStatusBus) : false
 
                     width: deletedDeviceList.width
                     height: isDeleted ? 70 : 0
