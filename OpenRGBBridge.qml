@@ -4,10 +4,17 @@ Item {
     readonly property string statusControllerId: "openrgb-bridge-status"
     property string statusText: "Connecting..."
     property bool busy: false
-    // Best-effort counts computed from service.controllers. -1 means "unknown"
-    // (iteration unsupported); the lists themselves never depend on these.
     property int activeCount: 0
     property int deletedCount: 0
+    property string deviceCatalogJson: ""
+
+    ListModel {
+        id: activeDeviceModel
+    }
+
+    ListModel {
+        id: deletedDeviceModel
+    }
 
     function logUi(message) {
         try {
@@ -18,14 +25,56 @@ Item {
         }
     }
 
-    // Device counts, status text and busy flag are all harvested by iterating
-    // SignalRGB's service.controllers collection (the only reliable JS→QML data
-    // channel). The JS side re-publishes the hidden status-bus controller on every
-    // change, so each poll sees a fresh snapshot.
+    function updateDeviceModels(json) {
+        json = String(json || "[]")
+        if (json === deviceCatalogJson) {
+            return
+        }
+
+        var devices = []
+        try {
+            devices = JSON.parse(json)
+        } catch (e) {
+            logUi("Failed to parse OpenRGB Bridge device catalogue: " + String(e))
+            return
+        }
+
+        activeDeviceModel.clear()
+        deletedDeviceModel.clear()
+        for (var i = 0; i < devices.length; i++) {
+            var item = devices[i] || {}
+            var deviceId = String(item.deviceId || "")
+            if (deviceId === "") {
+                continue
+            }
+
+            var row = {
+                "rowDeviceId": deviceId,
+                "rowName": String(item.name || "OpenRGB Device"),
+                "rowVendor": String(item.vendor || ""),
+                "rowOpenrgbIndex": Number(item.openrgbIndex || 0),
+                "rowLedCount": Number(item.ledCount || 0),
+                "rowZoneCount": Number(item.zoneCount || 0),
+                "rowIconSource": String(item.icon || item.image || "")
+            }
+            if (item.bridgeDeleted) {
+                deletedDeviceModel.append(row)
+            } else {
+                activeDeviceModel.append(row)
+            }
+        }
+
+        deviceCatalogJson = json
+        activeCount = activeDeviceModel.count
+        deletedCount = deletedDeviceModel.count
+    }
+
+    // The status carrier is the reliable JS→QML channel. It contains both transient
+    // status and an independent device catalogue, including suppressed devices that
+    // may be absent from service.controllers.
     function refreshTransientState() {
-        var active = 0
-        var deleted = 0
         var foundStatus = ""
+        var foundDeviceCatalog = ""
         var haveStatusBus = false
         var statusBusBusy = false
         try {
@@ -38,23 +87,19 @@ Item {
                 if (String(obj.id || "") === statusControllerId || obj.bridgeStatusBus) {
                     haveStatusBus = true
                     foundStatus = String(obj.bridgeStatus || "")
+                    foundDeviceCatalog = String(obj.bridgeDevicesJson || "[]")
                     statusBusBusy = !!obj.bridgeBusy
-                    continue
-                }
-                if (obj.bridgeDeleted) {
-                    deleted++
-                } else {
-                    active++
                 }
             }
-            activeCount = active
-            deletedCount = deleted
         } catch (e) {
-            activeCount = -1
-            deletedCount = -1
+            busy = readBusy()
+            return
         }
         if (foundStatus !== "") {
             statusText = foundStatus
+        }
+        if (haveStatusBus) {
+            updateDeviceModels(foundDeviceCatalog)
         }
         busy = haveStatusBus ? statusBusBusy : readBusy()
     }
@@ -332,7 +377,7 @@ Item {
 
             ListView {
                 id: activeDeviceList
-                model: service.controllers
+                model: activeDeviceModel
                 width: parent.width
                 height: contentHeight
                 interactive: false
@@ -340,13 +385,8 @@ Item {
                 spacing: 0
 
                 delegate: Item {
-                    property var ctrl: model.modelData.obj
-                    property bool isStatusBus: ctrl ? (String(ctrl.id || "") === statusControllerId || !!ctrl.bridgeStatusBus) : false
-                    property bool isActive: ctrl ? (!ctrl.bridgeDeleted && !isStatusBus) : false
-
                     width: activeDeviceList.width
-                    height: isActive ? 70 : 0
-                    visible: isActive
+                    height: 70
 
                     Rectangle {
                         width: parent.width
@@ -361,7 +401,7 @@ Item {
                             y: 13
                             width: 36
                             height: 36
-                            source: ctrl ? String(ctrl.icon || ctrl.image || "") : ""
+                            source: String(model.rowIconSource || "")
                             fillMode: Image.PreserveAspectFit
                             smooth: true
                         }
@@ -374,7 +414,7 @@ Item {
 
                             Text {
                                 color: "white"
-                                text: ctrl ? String(ctrl.name || "OpenRGB Device") : ""
+                                text: String(model.rowName || "OpenRGB Device")
                                 font.pixelSize: 15
                                 font.family: "Poppins"
                                 font.bold: true
@@ -384,7 +424,7 @@ Item {
 
                             Text {
                                 color: "#cbd5e1"
-                                text: ctrl ? ((ctrl.vendor ? ctrl.vendor + " | " : "") + "Index " + Number(ctrl.openrgbIndex || 0) + " | " + Number(ctrl.ledCount || 0) + " LEDs | " + Number(ctrl.zoneCount || 0) + " zone(s) | " + String(ctrl.deviceId || "")) : ""
+                                text: (model.rowVendor ? model.rowVendor + " | " : "") + "Index " + Number(model.rowOpenrgbIndex || 0) + " | " + Number(model.rowLedCount || 0) + " LEDs | " + Number(model.rowZoneCount || 0) + " zone(s) | " + String(model.rowDeviceId || "")
                                 font.pixelSize: 11
                                 font.family: "Poppins"
                                 width: parent.width
@@ -412,7 +452,7 @@ Item {
                                 text: "Delete"
                                 font.family: "Poppins"
                                 font.bold: true
-                                onClicked: deleteDevice(ctrl ? (ctrl.deviceId || ctrl.id) : "")
+                                onClicked: deleteDevice(model.rowDeviceId)
                             }
                         }
                     }
@@ -474,7 +514,7 @@ Item {
 
             ListView {
                 id: deletedDeviceList
-                model: service.controllers
+                model: deletedDeviceModel
                 width: parent.width
                 height: contentHeight
                 interactive: false
@@ -482,13 +522,8 @@ Item {
                 spacing: 0
 
                 delegate: Item {
-                    property var ctrl: model.modelData.obj
-                    property bool isStatusBus: ctrl ? (String(ctrl.id || "") === statusControllerId || !!ctrl.bridgeStatusBus) : false
-                    property bool isDeleted: ctrl ? (!!ctrl.bridgeDeleted && !isStatusBus) : false
-
                     width: deletedDeviceList.width
-                    height: isDeleted ? 70 : 0
-                    visible: isDeleted
+                    height: 70
 
                     Rectangle {
                         width: parent.width
@@ -503,7 +538,7 @@ Item {
                             y: 13
                             width: 36
                             height: 36
-                            source: ctrl ? String(ctrl.icon || ctrl.image || "") : ""
+                            source: String(model.rowIconSource || "")
                             fillMode: Image.PreserveAspectFit
                             smooth: true
                         }
@@ -516,7 +551,7 @@ Item {
 
                             Text {
                                 color: "#dbeafe"
-                                text: ctrl ? String(ctrl.name || "OpenRGB Device") : ""
+                                text: String(model.rowName || "OpenRGB Device")
                                 font.pixelSize: 15
                                 font.family: "Poppins"
                                 font.bold: true
@@ -526,7 +561,7 @@ Item {
 
                             Text {
                                 color: "#94a3b8"
-                                text: ctrl ? ((ctrl.vendor ? ctrl.vendor + " | " : "") + "Index " + Number(ctrl.openrgbIndex || 0) + " | " + Number(ctrl.ledCount || 0) + " LEDs | " + Number(ctrl.zoneCount || 0) + " zone(s) | " + String(ctrl.deviceId || "")) : ""
+                                text: (model.rowVendor ? model.rowVendor + " | " : "") + "Index " + Number(model.rowOpenrgbIndex || 0) + " | " + Number(model.rowLedCount || 0) + " LEDs | " + Number(model.rowZoneCount || 0) + " zone(s) | " + String(model.rowDeviceId || "")
                                 font.pixelSize: 11
                                 font.family: "Poppins"
                                 width: parent.width
@@ -554,7 +589,7 @@ Item {
                                 text: "Restore"
                                 font.family: "Poppins"
                                 font.bold: true
-                                onClicked: restoreDevice(ctrl ? (ctrl.deviceId || ctrl.id) : "")
+                                onClicked: restoreDevice(model.rowDeviceId)
                             }
                         }
                     }

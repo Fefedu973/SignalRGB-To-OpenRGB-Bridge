@@ -4,6 +4,6 @@
   "private": true,
   "description": "SignalRGB addon that controls OpenRGB SDK devices directly over TCP.",
   "scripts": {
-    "validate": "node tools/validate-openrgb-codec.cjs"
+    "validate": "node tools/validate-openrgb-codec.cjs && node tools/validate-openrgb-device-state.cjs"
   }
 }

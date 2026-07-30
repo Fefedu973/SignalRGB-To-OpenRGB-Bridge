@@ -155,10 +155,15 @@ export function DiscoveryService() {
 	this.client = undefined;
 	this.refreshId = 0;
 	this.busy = false;
+	// Controller registration is processed from Update(), never directly from a QML
+	// button handler or a TCP callback. Mutating service.controllers while QML is
+	// rendering it is unsafe in current SignalRGB builds and caused refresh crashes.
+	this.controllersDirty = true;
+	this.pendingControllerRemovals = [];
 	// Register a hidden status controller so QML can render a reactive status text by
-	// iterating `service.controllers` (same pattern as the device lists). Without this,
-	// QML never sees status changes because `discovery.getStatus()` returns are cached
-	// by the SignalRGB QML/JS bridge for the lifetime of the page.
+	// iterating `service.controllers`. It also carries a serialized device catalogue,
+	// because suppressed controllers are not reliably exposed in that collection and
+	// therefore cannot be used as the UI's "deleted devices" data source.
 	this.statusController = {
 		id: STATUS_CONTROLLER_ID,
 		deviceId: STATUS_CONTROLLER_ID,
@@ -166,6 +171,7 @@ export function DiscoveryService() {
 		bridgeStatusBus: true,
 		bridgeStatus: this.status,
 		bridgeBusy: false,
+		bridgeDevicesJson: "[]",
 		bridgeStatusRevision: 0
 	};
 	this.lastStatusPublishAt = 0;
@@ -209,6 +215,10 @@ export function DiscoveryService() {
 	};
 
 	this.Update = function () {
+		if (this.controllersDirty) {
+			this.controllersDirty = false;
+			this.syncControllers();
+		}
 		this.publishStatusIfDirty();
 
 		if (this.client) {
@@ -269,18 +279,19 @@ export function DiscoveryService() {
 						return;
 					}
 
+					const knownBeforeRefresh = self.getAllKnownDevices();
 					self.availableDevices = assignStableDeviceIds(devices, host, port);
 					self.availableDeviceSummaries = buildDeviceSummaries(self.availableDevices);
+					self.queueStaleControllers(knownBeforeRefresh, self.availableDevices);
 					saveSetting(LAST_DEVICES_SETTING, JSON.stringify(self.availableDeviceSummaries));
 					const selectedBeforeRefresh = self.selectedDevices.length > 0 ? self.selectedDevices : readSelectedDevices();
 					self.hasStoredSelectedDevices = self.hasStoredSelectedDevices || hasStoredSelectedDevices();
-					removeStaleControllers(selectedBeforeRefresh, self.availableDevices);
 					self.selectedDevices = self.hasStoredSelectedDevices
 						? getSelectedDevicesById(self.availableDevices, selectedBeforeRefresh)
 						: self.availableDeviceSummaries.slice(0);
 					saveSetting(SELECTED_DEVICES_SETTING, JSON.stringify(self.selectedDevices));
 					self.hasStoredSelectedDevices = true;
-					self.syncControllers();
+					self.requestControllerSync();
 					self.needsScan = false;
 					self.finishRefresh(client);
 					self.setStatus("Connected to OpenRGB at " + host + ":" + port + ". Found " + self.availableDevices.length + " device(s).");
@@ -399,7 +410,7 @@ export function DiscoveryService() {
 			return item.deviceId !== deviceId;
 		});
 		this.saveSelection();
-		this.syncControllers();
+		this.requestControllerSync();
 		this.setStatus("Deleted device.");
 		return this.status;
 	};
@@ -411,7 +422,7 @@ export function DiscoveryService() {
 		}
 		this.selectedDevices = [];
 		this.saveSelection();
-		this.syncControllers();
+		this.requestControllerSync();
 		this.setStatus("Deleted all OpenRGB devices.");
 		return this.status;
 	};
@@ -426,7 +437,7 @@ export function DiscoveryService() {
 
 		this.selectedDevices = getSelectedDevicesById(this.availableDevices, this.selectedDevices.concat([deviceData]));
 		this.saveSelection();
-		this.syncControllers();
+		this.requestControllerSync();
 		this.setStatus("Restored " + deviceData.name + ".");
 		return this.status;
 	};
@@ -434,14 +445,14 @@ export function DiscoveryService() {
 	this.restoreAllDevices = function () {
 		this.selectedDevices = this.getAllKnownDevices().slice(0);
 		this.saveSelection();
-		this.syncControllers();
+		this.requestControllerSync();
 		this.setStatus("Restored all OpenRGB devices.");
 		return this.status;
 	};
 
 	this.connectSelectedDevices = function () {
 		this.selectedDevices = readSelectedDevices();
-		this.syncControllers();
+		this.requestControllerSync();
 		return String(this.selectedDevices.length);
 	};
 
@@ -485,6 +496,46 @@ export function DiscoveryService() {
 		}
 	};
 
+	this.queueStaleControllers = function (previousDevices, currentDevices) {
+		const currentIds = getDeviceIds(currentDevices);
+		for (let i = 0; i < (previousDevices || []).length; i++) {
+			const deviceId = previousDevices[i] && previousDevices[i].deviceId;
+			if (!deviceId || currentIds.indexOf(deviceId) >= 0 || this.pendingControllerRemovals.indexOf(deviceId) >= 0) {
+				continue;
+			}
+			this.pendingControllerRemovals.push(deviceId);
+		}
+	};
+
+	// QML receives a stable catalogue through the status carrier instead of deriving
+	// it from service.controllers. In particular, a suppressed controller remains
+	// visible here and can always be restored.
+	this.updateDeviceCatalog = function () {
+		if (!this.statusController) {
+			return;
+		}
+
+		const selectedIds = getDeviceIds(this.selectedDevices);
+		const rows = buildDeviceSummaries(this.getAllKnownDevices());
+		for (let i = 0; i < rows.length; i++) {
+			rows[i].bridgeDeleted = selectedIds.indexOf(rows[i].deviceId) < 0;
+		}
+
+		const json = JSON.stringify(rows);
+		if (this.statusController.bridgeDevicesJson === json) {
+			return;
+		}
+
+		this.statusController.bridgeDevicesJson = json;
+		this.statusController.bridgeStatusRevision++;
+		service.updateController(this.statusController);
+	};
+
+	this.requestControllerSync = function () {
+		this.controllersDirty = true;
+		this.updateDeviceCatalog();
+	};
+
 	this.syncControllers = function () {
 		// Drop the legacy single "OpenRGB Bridge" controller from the merged-subdevice era.
 		closeRenderState(BRIDGE_CONTROLLER_ID);
@@ -498,8 +549,9 @@ export function DiscoveryService() {
 		const knownIds = {};
 
 		// One controller per known device: selected ones are announced as live SignalRGB
-		// devices, the rest stay registered but suppressed so they show up in the QML
-		// "deleted" list (driven by service.controllers) and can be restored.
+		// devices and the rest are suppressed. The QML list is driven by the independent
+		// status-carrier catalogue, so suppression cannot make a device impossible to
+		// restore.
 		for (let i = 0; i < allKnown.length; i++) {
 			const device = allKnown[i];
 			if (!device.deviceId) {
@@ -507,6 +559,20 @@ export function DiscoveryService() {
 			}
 			knownIds[device.deviceId] = true;
 			this.applyController(device, selectedIds.indexOf(device.deviceId) >= 0);
+		}
+
+		const pendingRemovals = this.pendingControllerRemovals;
+		this.pendingControllerRemovals = [];
+		for (let i = 0; i < pendingRemovals.length; i++) {
+			const id = pendingRemovals[i];
+			if (knownIds[id]) {
+				continue;
+			}
+			closeRenderState(id);
+			const controllerToRemove = service.getController(id);
+			if (controllerToRemove !== undefined) {
+				service.removeController(controllerToRemove);
+			}
 		}
 
 		// Drop controllers that are no longer known at all (e.g. stale/legacy ids).
@@ -629,9 +695,8 @@ class OpenRGBController {
 		this.zoneCount = this.zones ? this.zones.length : 0;
 		this.icon = getDeviceIconUrl(this.type);
 		this.image = getBridgeDeviceIconUrl(this.type);
-		// UI flag read reactively by the QML lists (active vs deleted). It is a plain
-		// property on the controller object so it travels through service.controllers,
-		// which is the only reliable QML data channel in SignalRGB.
+		// Tracks whether SignalRGB should announce or suppress this controller. QML gets
+		// its independent active/deleted snapshot from the status-carrier catalogue.
 		this.bridgeDeleted = !!deviceData.bridgeDeleted;
 	}
 
@@ -1749,28 +1814,6 @@ function findDeviceById(devices, deviceId) {
 		}
 	}
 	return undefined;
-}
-
-function removeStaleControllers(previousDevices, currentDevices) {
-	const currentIds = {};
-	for (let i = 0; i < currentDevices.length; i++) {
-		if (currentDevices[i] && currentDevices[i].deviceId) {
-			currentIds[currentDevices[i].deviceId] = true;
-		}
-	}
-
-	for (let i = 0; i < previousDevices.length; i++) {
-		const previousDevice = previousDevices[i] || {};
-		if (!previousDevice.deviceId || currentIds[previousDevice.deviceId]) {
-			continue;
-		}
-
-		closeRenderState(previousDevice.deviceId);
-		const controllerToRemove = service.getController(previousDevice.deviceId);
-		if (controllerToRemove !== undefined) {
-			service.removeController(controllerToRemove);
-		}
-	}
 }
 
 function getZoneLedCount(zone) {
