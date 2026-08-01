@@ -548,10 +548,9 @@ export function DiscoveryService() {
 		const allKnown = this.getAllKnownDevices();
 		const knownIds = {};
 
-		// One controller per known device: selected ones are announced as live SignalRGB
-		// devices and the rest are suppressed. The QML list is driven by the independent
-		// status-carrier catalogue, so suppression cannot make a device impossible to
-		// restore.
+		// Register only selected devices with SignalRGB. The QML list is driven by the
+		// independent status-carrier catalogue, so inactive devices do not need to leave
+		// behind suppressed controller shells in SignalRGB's internal registry.
 		for (let i = 0; i < allKnown.length; i++) {
 			const device = allKnown[i];
 			if (!device.deviceId) {
@@ -597,38 +596,48 @@ export function DiscoveryService() {
 			return "";
 		}
 
-		deviceData.bridgeDeleted = !active;
+		const deviceId = deviceData.deviceId;
+		let controller = service.getController(deviceId);
 
-		let controller = service.getController(deviceData.deviceId);
-		const isNew = controller === undefined;
-		// Treat a brand new controller as "was deleted" so a new active device announces once.
-		const wasDeleted = isNew ? true : !!controller.bridgeDeleted;
-
-		if (isNew) {
-			controller = new OpenRGBController(deviceData);
-			service.addController(controller);
-		} else if (typeof controller.updateWithValue === "function") {
-			controller.updateWithValue(deviceData);
-		} else {
-			controller.bridgeDeleted = !active;
-			service.updateController(controller);
+		if (!active) {
+			deviceData.bridgeDeleted = true;
+			closeRenderState(deviceId);
+			if (controller !== undefined) {
+				if (typeof service.suppressController === "function") {
+					service.suppressController(controller);
+				}
+				service.removeController(controller);
+			}
+			return deviceId;
 		}
 
-		// Announce / suppress ONLY on a state transition. Re-announcing an already
-		// announced controller spawns duplicate SignalRGB devices (and the extra render
-		// contexts that make streaming laggy); re-suppressing churns the device list.
-		if (active) {
-			if (isNew || wasDeleted) {
-				service.announceController(controller);
-			}
-		} else {
-			closeRenderState(deviceData.deviceId);
-			if ((isNew || !wasDeleted) && typeof service.suppressController === "function") {
+		deviceData.bridgeDeleted = false;
+		const isReusable = controller !== undefined &&
+			typeof controller.updateWithValue === "function" &&
+			!controller.bridgeDeleted;
+
+		if (isReusable) {
+			// Refresh metadata without re-announcing an already active device. Re-announcing
+			// spawns duplicate render contexts and makes streaming increasingly laggy.
+			controller.updateWithValue(deviceData);
+			return deviceId;
+		}
+
+		if (controller !== undefined) {
+			// SignalRGB can retain a lightweight shell after suppressing a controller. Such
+			// a shell has no OpenRGB metadata and is displayed as "Thirdparty Plugin" with
+			// zero LEDs if it is announced again. Always replace it with a complete instance.
+			if (typeof service.suppressController === "function") {
 				service.suppressController(controller);
 			}
+			service.removeController(controller);
 		}
 
-		return deviceData.deviceId;
+		controller = new OpenRGBController(deviceData);
+		service.addController(controller);
+		service.announceController(controller);
+
+		return deviceId;
 	};
 
 	this.setStatus = function (message) {

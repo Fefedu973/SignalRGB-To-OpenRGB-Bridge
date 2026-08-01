@@ -8,12 +8,13 @@ let source = fs.readFileSync(bridgePath, "utf8");
 source = source
 	.replace(/^import tcp from "@SignalRGB\/tcp";\s*/m, "")
 	.replace(/\bexport function\b/g, "function");
-source += "\nglobalThis.__bridgeTest = { DiscoveryService };\n";
+source += "\nglobalThis.__bridgeTest = { DiscoveryService, Initialize };\n";
 
 const settings = new Map();
 const entries = [];
 const controllers = new Map();
 const announced = [];
+const announcedControllers = [];
 const suppressed = [];
 
 function findEntry(id) {
@@ -54,6 +55,7 @@ const service = {
 	},
 	announceController(controller) {
 		announced.push(controller.id);
+		announcedControllers.push(controller);
 		controllers.set(controller.id, controller);
 		if (!findEntry(controller.id)) {
 			entries.push({ id: controller.id, obj: controller });
@@ -80,8 +82,31 @@ const context = {
 	ArrayBuffer,
 	TextDecoder,
 	service,
-	tcp: {},
-	device: { log() {} }
+	tcp: {
+		createSocket() {
+			return {
+				on() {},
+				connect() {},
+				close() {}
+			};
+		}
+	},
+	device: {
+		log() {},
+		setName(name) {
+			this.name = name;
+		},
+		setImageFromUrl(image) {
+			this.image = image;
+		},
+		setSize(size) {
+			this.size = size;
+		},
+		setControllableLeds(names, positions) {
+			this.ledNames = names;
+			this.ledPositions = positions;
+		}
+	}
 };
 vm.createContext(context);
 vm.runInContext(source, context, { filename: bridgePath });
@@ -123,12 +148,16 @@ assert.equal(catalogue[0].deviceId, gpu.deviceId);
 assert.equal(catalogue[0].bridgeDeleted, true, "an unselected controller must be restorable");
 
 discovery.Update();
-assert.ok(service.getController(gpu.deviceId), "the service tick must register the controller");
-assert.deepEqual(suppressed, [gpu.deviceId], "an unselected controller must stay suppressed");
+assert.equal(
+	service.getController(gpu.deviceId),
+	undefined,
+	"an unselected controller must remain outside SignalRGB's controller registry"
+);
+assert.deepEqual(suppressed, [], "an unselected controller must not create a shell just to suppress it");
 assert.equal(
 	findEntry(gpu.deviceId),
 	undefined,
-	"the test must reproduce SignalRGB hiding a suppressed controller from QML"
+	"the independent catalogue must not require an inactive service.controllers entry"
 );
 catalogue = JSON.parse(discovery.statusController.bridgeDevicesJson);
 assert.equal(
@@ -149,11 +178,13 @@ assert.equal(catalogue[0].bridgeDeleted, false, "restoring must immediately upda
 discovery.Update();
 assert.deepEqual(announced, [gpu.deviceId], "the next service tick must announce the restored controller");
 assert.ok(findEntry(gpu.deviceId), "announcing must make the controller visible to SignalRGB");
+assert.equal(announcedControllers[0].name, gpu.name, "the announced controller must retain its OpenRGB name");
+assert.equal(announcedControllers[0].ledCount, gpu.ledCount, "the announced controller must retain its LED count");
 
 discovery.removeDevice(gpu.deviceId);
 assert.deepEqual(
 	suppressed,
-	[gpu.deviceId],
+	[],
 	"deleting from QML must defer suppression until the service tick"
 );
 catalogue = JSON.parse(discovery.statusController.bridgeDevicesJson);
@@ -162,10 +193,44 @@ assert.equal(catalogue[0].bridgeDeleted, true, "deleting must leave a restorable
 discovery.Update();
 assert.deepEqual(
 	suppressed,
-	[gpu.deviceId, gpu.deviceId],
+	[gpu.deviceId],
 	"the next service tick must suppress the deleted controller"
 );
+assert.equal(
+	service.getController(gpu.deviceId),
+	undefined,
+	"a deleted controller must not leave a stale shell in SignalRGB's registry"
+);
 
+const staleControllerShell = {
+	id: gpu.deviceId,
+	deviceId: gpu.deviceId,
+	bridgeDeleted: true
+};
+controllers.set(gpu.deviceId, staleControllerShell);
+
+discovery.restoreDevice(gpu.deviceId);
+discovery.Update();
+
+assert.deepEqual(
+	announced,
+	[gpu.deviceId, gpu.deviceId],
+	"restoring must announce a controller even when SignalRGB retained a stale shell"
+);
+assert.notEqual(
+	announcedControllers[1],
+	staleControllerShell,
+	"a stale SignalRGB shell must never be announced as the restored device"
+);
+assert.equal(announcedControllers[1].name, gpu.name, "the replacement controller must have the OpenRGB name");
+assert.equal(announcedControllers[1].ledCount, gpu.ledCount, "the replacement controller must have its LEDs");
+
+context.controller = announcedControllers[1];
+context.__bridgeTest.Initialize();
+assert.equal(context.device.name, gpu.name, "device initialization must expose the real OpenRGB name");
+assert.equal(context.device.ledNames.length, gpu.ledCount, "device initialization must expose every OpenRGB LED");
+
+discovery.selectedDevices = [];
 discovery.availableDevices = [];
 discovery.availableDeviceSummaries = [];
 discovery.queueStaleControllers([gpu], []);
