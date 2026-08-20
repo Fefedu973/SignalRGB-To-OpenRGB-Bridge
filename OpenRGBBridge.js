@@ -1,7 +1,7 @@
-import { tcp } from "@SignalRGB/tcp";
+import tcp from "@SignalRGB/tcp";
 
 export function Name() { return "OpenRGB Bridge"; }
-export function Version() { return "2.0.1"; }
+export function Version() { return "2.0.2"; }
 export function Type() { return "network"; }
 export function Publisher() { return "Fefe_du_973"; }
 export function Size() { return [1, 1]; }
@@ -21,6 +21,7 @@ const HOST_SETTING = "SDKServerIP";
 const PORT_SETTING = "SDKServerPort";
 const SELECTED_DEVICES_SETTING = "SelectedDevices";
 const LAST_DEVICES_SETTING = "LastDevices";
+const UI_STATE_SETTING = "UiState";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 6742;
 const CLIENT_PROTOCOL_VERSION = 5;
@@ -151,27 +152,13 @@ export function DiscoveryService() {
 	// button handler or a TCP callback. Mutating service.controllers while QML is
 	// rendering it is unsafe in current SignalRGB builds and caused refresh crashes.
 	this.controllersDirty = true;
+	this.controllerSyncTimer = undefined;
+	this.syncingControllers = false;
 	this.pendingControllerRemovals = [];
-	// Register a hidden status controller so QML can render a reactive status text by
-	// iterating `service.controllers`. It also carries a serialized device catalogue,
-	// because suppressed controllers are not reliably exposed in that collection and
-	// therefore cannot be used as the UI's "deleted devices" data source.
-	this.statusController = {
-		id: STATUS_CONTROLLER_ID,
-		deviceId: STATUS_CONTROLLER_ID,
-		name: "OpenRGB Bridge Status",
-		bridgeStatusBus: true,
-		bridgeStatus: this.status,
-		bridgeBusy: false,
-		bridgeDevicesJson: "[]"
-	};
-	if (service.getController(STATUS_CONTROLLER_ID) === undefined) {
-		service.addController(this.statusController);
-	} else {
-		// Replace the backing value without removing the controller from SignalRGB's
-		// observable network model. QML reads live state through getUiState().
-		service.updateController(this.statusController);
-	}
+	// Keep UI-only state on the discovery service. Registering a synthetic controller
+	// during service construction can stop the discovery thread in SignalRGB 2.5.76.
+	this.deviceCatalogJson = "[]";
+	this.uiStateRevision = 0;
 	// Make one automatic discovery attempt on startup. A failed SDK connection is left
 	// idle until the user explicitly retries, avoiding an endless create/timeout/close
 	// socket loop when OpenRGB is installed but its SDK server is disabled.
@@ -180,13 +167,16 @@ export function DiscoveryService() {
 
 	this.Initialize = function () {
 		this.connectSelectedDevices();
+		// A discovery service with no registered controller is not guaranteed to receive
+		// Update() ticks in SignalRGB 2.5.76. Start the initial SDK discovery here so a
+		// fresh installation can bootstrap its first OpenRGB controllers.
+		const host = normalizeHost(readSetting(HOST_SETTING, DEFAULT_HOST));
+		const port = readNumberSetting(PORT_SETTING, DEFAULT_PORT);
+		this.refresh(host, port);
 	};
 
 	this.Update = function () {
-		if (this.controllersDirty) {
-			this.controllersDirty = false;
-			this.syncControllers();
-		}
+		this.flushControllerSync();
 		if (this.client) {
 			this.client.checkRequestTimeouts();
 			return;
@@ -369,7 +359,7 @@ export function DiscoveryService() {
 			pollToken: String(pollToken === undefined ? "" : pollToken),
 			status: String(this.status || buildLookingForStatus()),
 			busy: !!this.busy,
-			devicesJson: this.statusController ? String(this.statusController.bridgeDevicesJson || "[]") : "[]"
+			devicesJson: String(this.deviceCatalogJson || "[]")
 		});
 	};
 
@@ -485,14 +475,10 @@ export function DiscoveryService() {
 		}
 	};
 
-	// QML receives a stable catalogue through the status carrier instead of deriving
-	// it from service.controllers. In particular, a suppressed controller remains
-	// visible here and can always be restored.
+	// QML receives a stable catalogue directly from the discovery service instead of
+	// deriving it from service.controllers. A suppressed controller remains visible
+	// here and can always be restored.
 	this.updateDeviceCatalog = function () {
-		if (!this.statusController) {
-			return;
-		}
-
 		const selectedIds = getDeviceIds(this.selectedDevices);
 		const rows = buildDeviceSummaries(this.getAllKnownDevices());
 		for (let i = 0; i < rows.length; i++) {
@@ -500,17 +486,49 @@ export function DiscoveryService() {
 		}
 
 		const json = JSON.stringify(rows);
-		if (this.statusController.bridgeDevicesJson === json) {
+		if (this.deviceCatalogJson === json) {
 			return;
 		}
 
-		this.statusController.bridgeDevicesJson = json;
-		service.updateController(this.statusController);
+		this.deviceCatalogJson = json;
+		this.persistUiState();
 	};
 
 	this.requestControllerSync = function () {
 		this.controllersDirty = true;
 		this.updateDeviceCatalog();
+
+		// SignalRGB 2.5.76 does not tick Update() while a discovery service has no
+		// registered controllers. Defer the mutation out of the TCP/QML callback so the
+		// first discovered (or restored) controllers can bootstrap normal Update ticks.
+		if (typeof setTimeout === "function") {
+			if (this.controllerSyncTimer !== undefined && typeof clearTimeout === "function") {
+				clearTimeout(this.controllerSyncTimer);
+			}
+			const self = this;
+			this.controllerSyncTimer = setTimeout(function () {
+				self.controllerSyncTimer = undefined;
+				self.flushControllerSync();
+			}, 50);
+		}
+	};
+
+	this.flushControllerSync = function () {
+		if (this.controllerSyncTimer !== undefined && typeof clearTimeout === "function") {
+			clearTimeout(this.controllerSyncTimer);
+			this.controllerSyncTimer = undefined;
+		}
+		if (!this.controllersDirty || this.syncingControllers) {
+			return;
+		}
+
+		this.controllersDirty = false;
+		this.syncingControllers = true;
+		try {
+			this.syncControllers();
+		} finally {
+			this.syncingControllers = false;
+		}
 	};
 
 	this.syncControllers = function () {
@@ -619,13 +637,19 @@ export function DiscoveryService() {
 
 	this.setStatus = function (message) {
 		this.status = String(message || "");
-		if (this.statusController) {
-			this.statusController.bridgeStatus = this.status;
-			this.statusController.bridgeBusy = !!this.busy;
-			service.updateController(this.statusController);
-		}
+		this.persistUiState();
 		logFromService(this.status);
 		return this.status;
+	};
+
+	this.persistUiState = function () {
+		this.uiStateRevision++;
+		saveSetting(UI_STATE_SETTING, JSON.stringify({
+			revision: this.uiStateRevision,
+			status: String(this.status || buildLookingForStatus()),
+			busy: !!this.busy,
+			devicesJson: String(this.deviceCatalogJson || "[]")
+		}));
 	};
 
 	this.finishRefresh = function (client) {
@@ -636,10 +660,7 @@ export function DiscoveryService() {
 		if (client) {
 			client.close();
 		}
-		if (this.statusController) {
-			this.statusController.bridgeBusy = false;
-			service.updateController(this.statusController);
-		}
+		this.persistUiState();
 	};
 }
 
@@ -745,18 +766,13 @@ class OpenRGBClient {
 
 		try {
 			this.socket = tcp.createSocket();
-			// Current SignalRGB TCP sockets emit "connected". Fall back to the legacy
-			// alias only if an older runtime rejects the current event name.
-			const connectedHandler = this.handleConnected.bind(this);
-			let connectedBound = bindSocketEvent(this.socket, "connected", connectedHandler);
-			if (!connectedBound) {
-				connectedBound = bindSocketEvent(this.socket, "connection", connectedHandler);
-			}
-			if (!connectedBound) {
+			// SignalRGB 2.5.76 exposes "connection" and reports documented aliases such as
+			// "connected" as errors, so bind only the runtime's verified event names.
+			if (!bindSocketEvent(this.socket, "connection", this.handleConnected.bind(this))) {
 				throw new Error("SignalRGB TCP socket exposes no connection event");
 			}
-			bindSocketEvent(this.socket, "disconnected", this.handleDisconnected.bind(this));
-			if (!bindSocketEvent(this.socket, "message", this.handleMessage.bind(this)) ||
+			if (!bindSocketEvent(this.socket, "close", this.handleDisconnected.bind(this)) ||
+				!bindSocketEvent(this.socket, "message", this.handleMessage.bind(this)) ||
 				!bindSocketEvent(this.socket, "error", this.handleError.bind(this))) {
 				throw new Error("SignalRGB TCP socket exposes incomplete event support");
 			}
@@ -817,16 +833,19 @@ class OpenRGBClient {
 			return;
 		}
 
+		// SignalRGB emits "close" synchronously from socket.close(). Detach first so
+		// the close handler cannot recursively close the same socket.
+		const socket = this.socket;
+		this.socket = undefined;
 		try {
-			this.socket.close();
+			socket.close();
 		} catch (error) {
 			try {
-				this.socket.disconnect();
+				socket.disconnect();
 			} catch (_) {
 				// Some SignalRGB socket versions expose close(), others disconnect().
 			}
 		}
-		this.socket = undefined;
 	}
 
 	handleConnected() {
@@ -873,15 +892,18 @@ class OpenRGBClient {
 		// clean slate; without this a half-open socket from a timed-out attempt keeps
 		// resources around and can confuse SignalRGB's TCP module on reconnect.
 		if (this.socket) {
+			// SignalRGB's close event is synchronous. Clear our reference before closing
+			// to make a re-entrant handleDisconnected() call a harmless no-op.
+			const socket = this.socket;
+			this.socket = undefined;
 			try {
-				this.socket.close();
+				socket.close();
 			} catch (_) {
 				try {
-					this.socket.disconnect();
+					socket.disconnect();
 				} catch (_) {
 				}
 			}
-			this.socket = undefined;
 		}
 
 		if (wasConnected) {
@@ -1245,7 +1267,7 @@ function buildSignalRgbLayout(controllerData) {
 			device.createSubdevice(subdeviceId);
 			device.setSubdeviceName(subdeviceId, zone.name || ("Zone " + (zoneIndex + 1)));
 			device.setSubdeviceSize(subdeviceId, map.width, map.height);
-			device.setSubdeviceLeds(subdeviceId, map.names, map.x, map.y);
+			device.setSubdeviceLeds(subdeviceId, map.names, map.positions);
 			state.subdeviceMaps.push({
 				id: subdeviceId,
 				positions: map.positions
