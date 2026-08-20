@@ -1,7 +1,7 @@
-import tcp from "@SignalRGB/tcp";
+import { tcp } from "@SignalRGB/tcp";
 
 export function Name() { return "OpenRGB Bridge"; }
-export function Version() { return "2.0.0"; }
+export function Version() { return "2.0.1"; }
 export function Type() { return "network"; }
 export function Publisher() { return "Fefe_du_973"; }
 export function Size() { return [1, 1]; }
@@ -26,18 +26,10 @@ const DEFAULT_PORT = 6742;
 const CLIENT_PROTOCOL_VERSION = 5;
 const CLIENT_NAME = "SignalRGB OpenRGB Bridge";
 const BRIDGE_CONTROLLER_ID = "openrgb-bridge";
-// Hidden carrier registered in `service.controllers` so QML can read the live status
-// via iteration (the only reliable JS→QML channel in SignalRGB; `discovery.getStatus()`
-// and `service.getSetting` return values are cached at the QML bridge layer). QML only
-// snapshots a controller's data when its row is ADDED — `service.updateController` does
-// not push later property changes across the bridge (the reference Govee plugin
-// refreshes QML the same way: removeController + addController). The re-publish must
-// NOT happen inside setStatus itself: status changes fire synchronously from QML-invoked
-// calls (refresh/rescan) and many times per scan, and yanking model rows out of the
-// page's ListViews mid-call crashes SignalRGB. Instead setStatus only bumps a revision
-// and the service's Update() tick re-publishes at most once per interval.
+// Stable fallback carrier for SignalRGB builds whose QML bridge cannot invoke the live
+// discovery state method. Never remove/re-add this controller: doing that from Update()
+// mutates SignalRGB's network-controller model and can crash the native application.
 const STATUS_CONTROLLER_ID = "openrgb-bridge-status";
-const STATUS_PUBLISH_INTERVAL_MS = 1000;
 const ICON_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/signalbridge.png";
 const DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_white/";
 const BRIDGE_DEVICE_ICON_BASE_URL = "https://raw.githubusercontent.com/Fefedu973/SignalRGB-To-OpenRGB-Bridge/main/icons/openrgb_bridge/";
@@ -171,22 +163,18 @@ export function DiscoveryService() {
 		bridgeStatusBus: true,
 		bridgeStatus: this.status,
 		bridgeBusy: false,
-		bridgeDevicesJson: "[]",
-		bridgeStatusRevision: 0
+		bridgeDevicesJson: "[]"
 	};
-	this.lastStatusPublishAt = 0;
-	this.publishedStatusRevision = -1;
 	if (service.getController(STATUS_CONTROLLER_ID) === undefined) {
 		service.addController(this.statusController);
-		this.publishedStatusRevision = this.statusController.bridgeStatusRevision;
 	} else {
-		// A carrier from a previous session is still registered; leave the revision
-		// unpublished so the first Update() tick replaces it with this fresh object.
+		// Replace the backing value without removing the controller from SignalRGB's
+		// observable network model. QML reads live state through getUiState().
 		service.updateController(this.statusController);
 	}
-	// Drives the auto-reconnect loop in Update(): set to true whenever we need a fresh
-	// scan (cold start, after a failure, or after OpenRGB notifies of a device list
-	// change), cleared on success so we do not hammer OpenRGB once everything is in sync.
+	// Make one automatic discovery attempt on startup. A failed SDK connection is left
+	// idle until the user explicitly retries, avoiding an endless create/timeout/close
+	// socket loop when OpenRGB is installed but its SDK server is disabled.
 	this.needsScan = true;
 	this.lastAutoAttemptAt = 0;
 
@@ -194,33 +182,11 @@ export function DiscoveryService() {
 		this.connectSelectedDevices();
 	};
 
-	// Re-publishes the status carrier (remove + add) so QML takes a fresh snapshot.
-	// Runs only from the service's own Update() tick — never from a QML-invoked call —
-	// and at most once per STATUS_PUBLISH_INTERVAL_MS, because pulling rows out of
-	// service.controllers while the QML page is using them crashes SignalRGB.
-	this.publishStatusIfDirty = function () {
-		if (!this.statusController) {
-			return;
-		}
-		if (this.publishedStatusRevision === this.statusController.bridgeStatusRevision) {
-			return;
-		}
-		const now = Date.now();
-		if (now - this.lastStatusPublishAt < STATUS_PUBLISH_INTERVAL_MS) {
-			return;
-		}
-		this.lastStatusPublishAt = now;
-		this.publishedStatusRevision = this.statusController.bridgeStatusRevision;
-		republishStatusController(this.statusController);
-	};
-
 	this.Update = function () {
 		if (this.controllersDirty) {
 			this.controllersDirty = false;
 			this.syncControllers();
 		}
-		this.publishStatusIfDirty();
-
 		if (this.client) {
 			this.client.checkRequestTimeouts();
 			return;
@@ -273,8 +239,8 @@ export function DiscoveryService() {
 					}
 
 					if (error) {
-						self.setStatus(error + " Will retry shortly.");
-						self.needsScan = true;
+						self.setStatus(error + " Click Connect / Refresh to retry.");
+						self.needsScan = false;
 						self.finishRefresh(client);
 						return;
 					}
@@ -302,8 +268,8 @@ export function DiscoveryService() {
 					return;
 				}
 
-				self.setStatus("Could not reach OpenRGB at " + host + ":" + port + " (" + message + "). Start OpenRGB and enable the SDK server; retrying automatically.");
-				self.needsScan = true;
+				self.setStatus("Could not reach OpenRGB at " + host + ":" + port + " (" + message + "). Start OpenRGB, enable the SDK server, then click Connect / Refresh.");
+				self.needsScan = false;
 				self.finishRefresh(client);
 			},
 			onProgress: function (message) {
@@ -351,8 +317,8 @@ export function DiscoveryService() {
 			},
 			onError: function (message) {
 				self.finishRefresh(client);
-				self.needsScan = true;
-				self.setStatus("Could not request OpenRGB rescan: " + message + " Will retry shortly.");
+				self.needsScan = false;
+				self.setStatus("Could not request OpenRGB rescan: " + message + " Click Connect / Refresh to retry.");
 			}
 		});
 
@@ -360,7 +326,7 @@ export function DiscoveryService() {
 			client.connect();
 		} catch (error) {
 			this.finishRefresh(client);
-			this.needsScan = true;
+			this.needsScan = false;
 			this.setStatus("Could not request OpenRGB rescan: " + error);
 		}
 		return this.status;
@@ -393,6 +359,18 @@ export function DiscoveryService() {
 		}
 
 		return String(this.status || buildLookingForStatus());
+	};
+
+	// The changing poll token prevents SignalRGB's QML bridge from reusing a cached
+	// no-argument method result. Returning one JSON primitive keeps status, busy state,
+	// and the independent device catalogue consistent within a single UI refresh.
+	this.getUiState = function (pollToken) {
+		return JSON.stringify({
+			pollToken: String(pollToken === undefined ? "" : pollToken),
+			status: String(this.status || buildLookingForStatus()),
+			busy: !!this.busy,
+			devicesJson: this.statusController ? String(this.statusController.bridgeDevicesJson || "[]") : "[]"
+		});
 	};
 
 	this.isBusy = function () {
@@ -527,7 +505,6 @@ export function DiscoveryService() {
 		}
 
 		this.statusController.bridgeDevicesJson = json;
-		this.statusController.bridgeStatusRevision++;
 		service.updateController(this.statusController);
 	};
 
@@ -645,8 +622,6 @@ export function DiscoveryService() {
 		if (this.statusController) {
 			this.statusController.bridgeStatus = this.status;
 			this.statusController.bridgeBusy = !!this.busy;
-			// Marks the carrier dirty; Update() re-publishes it to QML (throttled).
-			this.statusController.bridgeStatusRevision++;
 			service.updateController(this.statusController);
 		}
 		logFromService(this.status);
@@ -663,22 +638,9 @@ export function DiscoveryService() {
 		}
 		if (this.statusController) {
 			this.statusController.bridgeBusy = false;
-			this.statusController.bridgeStatusRevision++;
 			service.updateController(this.statusController);
 		}
 	};
-}
-
-// QML only snapshots controller data when a row is added to `service.controllers`;
-// `service.updateController` does not propagate property changes to the QML page.
-// Removing and re-adding the carrier forces a fresh snapshot (same trick the official
-// Govee Direct Connect plugin uses in its `updatedController` handler).
-function republishStatusController(statusController) {
-	const existing = service.getController(STATUS_CONTROLLER_ID);
-	if (existing !== undefined) {
-		service.removeController(existing);
-	}
-	service.addController(statusController);
 }
 
 class OpenRGBController {
@@ -748,6 +710,10 @@ class OpenRGBClient {
 		this.onDisconnected = options.onDisconnected || function () {};
 		this.onDeviceListUpdated = options.onDeviceListUpdated || function () {};
 		this.connectTimeoutMs = options.connectTimeoutMs !== undefined ? options.connectTimeoutMs : CONNECT_TIMEOUT_MS;
+		this.baseReconnectDelayMs = options.reconnectDelayMs !== undefined ? Math.max(0, options.reconnectDelayMs) : 5000;
+		this.maxReconnectDelayMs = options.maxReconnectDelayMs !== undefined ? Math.max(this.baseReconnectDelayMs, options.maxReconnectDelayMs) : 60000;
+		this.reconnectDelayMs = this.baseReconnectDelayMs;
+		this.nextConnectAt = 0;
 		this.socket = undefined;
 		this.connected = false;
 		this.ready = false;
@@ -763,6 +729,9 @@ class OpenRGBClient {
 		if (this.connected || this.connecting) {
 			return;
 		}
+		if (Date.now() < this.nextConnectAt) {
+			return;
+		}
 
 		if (!tcp || typeof tcp.createSocket !== "function") {
 			this.reportError("SignalRGB TCP module is unavailable. Please update SignalRGB or install a build that supports network TCP addons.");
@@ -776,14 +745,27 @@ class OpenRGBClient {
 
 		try {
 			this.socket = tcp.createSocket();
-			this.socket.on("connection", this.handleConnected.bind(this));
-			this.socket.on("message", this.handleMessage.bind(this));
-			this.socket.on("error", this.handleError.bind(this));
+			// Current SignalRGB TCP sockets emit "connected". Fall back to the legacy
+			// alias only if an older runtime rejects the current event name.
+			const connectedHandler = this.handleConnected.bind(this);
+			let connectedBound = bindSocketEvent(this.socket, "connected", connectedHandler);
+			if (!connectedBound) {
+				connectedBound = bindSocketEvent(this.socket, "connection", connectedHandler);
+			}
+			if (!connectedBound) {
+				throw new Error("SignalRGB TCP socket exposes no connection event");
+			}
+			bindSocketEvent(this.socket, "disconnected", this.handleDisconnected.bind(this));
+			if (!bindSocketEvent(this.socket, "message", this.handleMessage.bind(this)) ||
+				!bindSocketEvent(this.socket, "error", this.handleError.bind(this))) {
+				throw new Error("SignalRGB TCP socket exposes incomplete event support");
+			}
 			this.socket.connect(this.host, this.port);
 			this.armConnectTimeout();
 		} catch (error) {
 			this.connecting = false;
 			this.reportError("Could not create TCP socket: " + error);
+			this.deferReconnect();
 		}
 	}
 
@@ -855,12 +837,15 @@ class OpenRGBClient {
 		this.clearConnectTimeout();
 		this.connecting = false;
 		this.connected = true;
+		this.reconnectDelayMs = this.baseReconnectDelayMs;
+		this.nextConnectAt = 0;
 		this.logger("Connected to OpenRGB SDK server.");
 
 		const self = this;
 		this.request(Command.requestProtocolVersion, u32(CLIENT_PROTOCOL_VERSION), 0, function (packet, error) {
 			if (error) {
 				self.reportError(error);
+				self.handleDisconnected();
 				return;
 			}
 
@@ -882,6 +867,7 @@ class OpenRGBClient {
 		this.connecting = false;
 		this.ready = false;
 		this.pending = [];
+		this.deferReconnect();
 
 		// Tear down the underlying socket so the next connect() attempt starts from a
 		// clean slate; without this a half-open socket from a timed-out attempt keeps
@@ -901,6 +887,11 @@ class OpenRGBClient {
 		if (wasConnected) {
 			this.onDisconnected();
 		}
+	}
+
+	deferReconnect() {
+		this.nextConnectAt = Date.now() + this.reconnectDelayMs;
+		this.reconnectDelayMs = Math.min(this.maxReconnectDelayMs, Math.max(this.baseReconnectDelayMs, this.reconnectDelayMs * 2));
 	}
 
 	handleError(error) {
@@ -1130,6 +1121,15 @@ class OpenRGBClient {
 		this.lastError = message;
 		this.logger(message);
 		this.onError(message);
+	}
+}
+
+function bindSocketEvent(socket, eventName, handler) {
+	try {
+		socket.on(eventName, handler);
+		return true;
+	} catch (_) {
+		return false;
 	}
 }
 

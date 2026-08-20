@@ -4,11 +4,14 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const bridgePath = path.join(__dirname, "..", "OpenRGBBridge.js");
-let source = fs.readFileSync(bridgePath, "utf8");
+const qmlPath = path.join(__dirname, "..", "OpenRGBBridge.qml");
+const rawSource = fs.readFileSync(bridgePath, "utf8");
+let source = rawSource;
+const qmlSource = fs.readFileSync(qmlPath, "utf8");
 source = source
-	.replace(/^import tcp from "@SignalRGB\/tcp";\s*/m, "")
+	.replace(/^import\s+(?:tcp|\{\s*tcp\s*\})\s+from\s+"@SignalRGB\/tcp";\s*/m, "")
 	.replace(/\bexport function\b/g, "function");
-source += "\nglobalThis.__bridgeTest = { DiscoveryService, Initialize };\n";
+source += "\nglobalThis.__bridgeTest = { DiscoveryService, OpenRGBClient, Initialize };\n";
 
 const settings = new Map();
 const entries = [];
@@ -16,6 +19,9 @@ const controllers = new Map();
 const announced = [];
 const announcedControllers = [];
 const suppressed = [];
+const added = [];
+const removed = [];
+const sockets = [];
 
 function findEntry(id) {
 	return entries.find((entry) => entry.id === id);
@@ -33,6 +39,7 @@ const service = {
 		return controllers.get(id);
 	},
 	addController(controller) {
+		added.push(controller.id);
 		controllers.set(controller.id, controller);
 		if (!findEntry(controller.id)) {
 			entries.push({ id: controller.id, obj: controller });
@@ -47,6 +54,7 @@ const service = {
 	},
 	removeController(controller) {
 		const id = typeof controller === "string" ? controller : controller.id;
+		removed.push(id);
 		const index = entries.findIndex((entry) => entry.id === id);
 		if (index >= 0) {
 			entries.splice(index, 1);
@@ -84,11 +92,25 @@ const context = {
 	service,
 	tcp: {
 		createSocket() {
-			return {
-				on() {},
-				connect() {},
-				close() {}
+			const socket = {
+				handlers: {},
+				sent: [],
+				on(eventName, callback) {
+					this.handlers[eventName] = callback;
+				},
+				connect(host, port) {
+					this.host = host;
+					this.port = port;
+				},
+				send(data) {
+					this.sent.push(data);
+				},
+				close() {
+					this.closed = true;
+				}
 			};
+			sockets.push(socket);
+			return socket;
 		}
 	},
 	device: {
@@ -111,8 +133,33 @@ const context = {
 vm.createContext(context);
 vm.runInContext(source, context, { filename: bridgePath });
 
+assert.match(qmlSource, /discovery\.getUiState\(pollRevision\)/, "QML must poll the live cache-busted state method");
+assert.match(rawSource, /^import \{ tcp \} from "@SignalRGB\/tcp";/m, "the plugin must use SignalRGB's current named TCP import");
+assert.doesNotMatch(source, /republishStatusController/, "the status carrier must never be removed and re-added");
+
 const discovery = new context.__bridgeTest.DiscoveryService();
 discovery.needsScan = false;
+const statusControllerId = "openrgb-bridge-status";
+const initialStatusAdds = added.filter((id) => id === statusControllerId).length;
+
+for (let i = 0; i < 5; i++) {
+	discovery.setStatus("Status update " + i);
+	discovery.Update();
+}
+assert.equal(
+	added.filter((id) => id === statusControllerId).length,
+	initialStatusAdds,
+	"status changes must not re-add SignalRGB's network controller"
+);
+assert.equal(
+	removed.filter((id) => id === statusControllerId).length,
+	0,
+	"status changes must never remove SignalRGB's network controller"
+);
+
+let uiState = JSON.parse(discovery.getUiState(42));
+assert.equal(uiState.pollToken, "42", "the UI snapshot must echo its cache-busting poll token");
+assert.equal(uiState.status, "Status update 4", "the UI snapshot must expose the latest status");
 
 const gpu = {
 	deviceId: "openrgb-test-gpu",
@@ -135,6 +182,9 @@ discovery.availableDevices = [gpu];
 discovery.availableDeviceSummaries = [gpu];
 discovery.selectedDevices = [];
 discovery.requestControllerSync();
+
+uiState = JSON.parse(discovery.getUiState(43));
+assert.equal(JSON.parse(uiState.devicesJson)[0].deviceId, gpu.deviceId, "the live UI snapshot must expose the device catalogue");
 
 assert.equal(
 	service.getController(gpu.deviceId),
@@ -229,6 +279,51 @@ context.controller = announcedControllers[1];
 context.__bridgeTest.Initialize();
 assert.equal(context.device.name, gpu.name, "device initialization must expose the real OpenRGB name");
 assert.equal(context.device.ledNames.length, gpu.ledCount, "device initialization must expose every OpenRGB LED");
+
+const protocolClient = new context.__bridgeTest.OpenRGBClient({
+	host: "127.0.0.1",
+	port: 6742,
+	connectTimeoutMs: 0
+});
+protocolClient.connect();
+const protocolSocket = sockets[sockets.length - 1];
+assert.equal(typeof protocolSocket.handlers.connected, "function", "the client must bind SignalRGB's current connected event");
+protocolSocket.handlers.connected();
+assert.equal(protocolClient.connected, true, "the current connected event must complete the TCP connection");
+assert.equal(protocolSocket.sent.length, 1, "connecting must send the OpenRGB protocol-version request");
+protocolClient.close();
+
+const backoffClient = new context.__bridgeTest.OpenRGBClient({
+	host: "127.0.0.1",
+	port: 6742,
+	connectTimeoutMs: 0,
+	reconnectDelayMs: 5000
+});
+backoffClient.connect();
+const socketsBeforeRenderFailure = sockets.length;
+backoffClient.handleError("connection refused");
+for (let i = 0; i < 100; i++) {
+	backoffClient.ensureConnected();
+}
+assert.equal(
+	sockets.length,
+	socketsBeforeRenderFailure,
+	"render frames must not create a tight TCP reconnect loop after an SDK failure"
+);
+
+discovery.refresh("127.0.0.1", 6742);
+const failedSocketCount = sockets.length;
+discovery.client.handleError("connection refused");
+assert.equal(discovery.needsScan, false, "a failed SDK connection must wait for an explicit user retry");
+for (let i = 0; i < 10; i++) {
+	discovery.Update();
+}
+assert.equal(sockets.length, failedSocketCount, "Update must not create an endless socket retry loop after failure");
+assert.equal(
+	removed.filter((id) => id === statusControllerId).length,
+	0,
+	"connection failures must not remove the status controller"
+);
 
 discovery.selectedDevices = [];
 discovery.availableDevices = [];
