@@ -9,7 +9,7 @@ const rawSource = fs.readFileSync(bridgePath, "utf8");
 let source = rawSource;
 const qmlSource = fs.readFileSync(qmlPath, "utf8");
 source = source
-	.replace(/^import\s+(?:tcp|\{\s*tcp\s*\})\s+from\s+"@SignalRGB\/tcp";\s*/m, "")
+	.replace(/^import\s+tcp\s+from\s+"@SignalRGB\/tcp";\s*/m, "")
 	.replace(/\bexport function\b/g, "function");
 source += "\nglobalThis.__bridgeTest = { DiscoveryService, OpenRGBClient, Initialize };\n";
 
@@ -107,6 +107,9 @@ const context = {
 				},
 				close() {
 					this.closed = true;
+					if (this.handlers.close) {
+						this.handlers.close();
+					}
 				}
 			};
 			sockets.push(socket);
@@ -134,13 +137,23 @@ vm.createContext(context);
 vm.runInContext(source, context, { filename: bridgePath });
 
 assert.match(qmlSource, /discovery\.getUiState\(pollRevision\)/, "QML must poll the live cache-busted state method");
-assert.match(rawSource, /^import \{ tcp \} from "@SignalRGB\/tcp";/m, "the plugin must use SignalRGB's current named TCP import");
-assert.doesNotMatch(source, /republishStatusController/, "the status carrier must never be removed and re-added");
+assert.match(qmlSource, /service\.getSetting\("General", "UiState"\)/, "QML must read the persisted cross-thread UI state");
+assert.match(
+	rawSource,
+	/^import tcp from "@SignalRGB\/tcp";/m,
+	"the plugin must use SignalRGB 2.5.76's default TCP export"
+);
+assert.doesNotMatch(source, /statusController\s*=/, "the discovery service must not register a synthetic status controller");
+assert.match(rawSource, /setSubdeviceLeds\(subdeviceId, map\.names, map\.positions\)/, "subdevice LEDs must use SignalRGB's three-argument API");
 
 const discovery = new context.__bridgeTest.DiscoveryService();
 discovery.needsScan = false;
 const statusControllerId = "openrgb-bridge-status";
-const initialStatusAdds = added.filter((id) => id === statusControllerId).length;
+assert.equal(
+	added.filter((id) => id === statusControllerId).length,
+	0,
+	"service construction must not add a synthetic status controller"
+);
 
 for (let i = 0; i < 5; i++) {
 	discovery.setStatus("Status update " + i);
@@ -148,13 +161,13 @@ for (let i = 0; i < 5; i++) {
 }
 assert.equal(
 	added.filter((id) => id === statusControllerId).length,
-	initialStatusAdds,
-	"status changes must not re-add SignalRGB's network controller"
+	0,
+	"status changes must not add a synthetic status controller"
 );
 assert.equal(
 	removed.filter((id) => id === statusControllerId).length,
 	0,
-	"status changes must never remove SignalRGB's network controller"
+	"status changes must not remove a synthetic status controller"
 );
 
 let uiState = JSON.parse(discovery.getUiState(42));
@@ -192,7 +205,7 @@ assert.equal(
 	"QML-facing actions must not mutate service.controllers synchronously"
 );
 
-let catalogue = JSON.parse(discovery.statusController.bridgeDevicesJson);
+let catalogue = JSON.parse(discovery.deviceCatalogJson);
 assert.equal(catalogue.length, 1, "a discovered controller must be present in the UI catalogue");
 assert.equal(catalogue[0].deviceId, gpu.deviceId);
 assert.equal(catalogue[0].bridgeDeleted, true, "an unselected controller must be restorable");
@@ -209,7 +222,7 @@ assert.equal(
 	undefined,
 	"the independent catalogue must not require an inactive service.controllers entry"
 );
-catalogue = JSON.parse(discovery.statusController.bridgeDevicesJson);
+catalogue = JSON.parse(discovery.deviceCatalogJson);
 assert.equal(
 	catalogue[0].bridgeDeleted,
 	true,
@@ -222,7 +235,7 @@ assert.deepEqual(
 	[],
 	"restoring from QML must defer announcement until the service tick"
 );
-catalogue = JSON.parse(discovery.statusController.bridgeDevicesJson);
+catalogue = JSON.parse(discovery.deviceCatalogJson);
 assert.equal(catalogue[0].bridgeDeleted, false, "restoring must immediately update the UI catalogue");
 
 discovery.Update();
@@ -237,7 +250,7 @@ assert.deepEqual(
 	[],
 	"deleting from QML must defer suppression until the service tick"
 );
-catalogue = JSON.parse(discovery.statusController.bridgeDevicesJson);
+catalogue = JSON.parse(discovery.deviceCatalogJson);
 assert.equal(catalogue[0].bridgeDeleted, true, "deleting must leave a restorable catalogue row");
 
 discovery.Update();
@@ -287,10 +300,16 @@ const protocolClient = new context.__bridgeTest.OpenRGBClient({
 });
 protocolClient.connect();
 const protocolSocket = sockets[sockets.length - 1];
-assert.equal(typeof protocolSocket.handlers.connected, "function", "the client must bind SignalRGB's current connected event");
-protocolSocket.handlers.connected();
-assert.equal(protocolClient.connected, true, "the current connected event must complete the TCP connection");
+assert.equal(typeof protocolSocket.handlers.connection, "function", "the client must bind SignalRGB 2.5.76's connection event");
+assert.equal(typeof protocolSocket.handlers.close, "function", "the client must bind SignalRGB 2.5.76's close event");
+assert.equal(protocolSocket.handlers.connected, undefined, "the client must not bind an event rejected by SignalRGB 2.5.76");
+assert.equal(protocolSocket.handlers.disconnected, undefined, "the client must not bind an event rejected by SignalRGB 2.5.76");
+protocolSocket.handlers.connection();
+assert.equal(protocolClient.connected, true, "the SignalRGB 2.5.76 connection event must complete the TCP connection");
 assert.equal(protocolSocket.sent.length, 1, "connecting must send the OpenRGB protocol-version request");
+protocolSocket.handlers.close();
+assert.equal(protocolClient.connected, false, "the SignalRGB 2.5.76 close event must tear down the connection");
+assert.equal(protocolSocket.closed, true, "the close event must close its socket without recursive overflow");
 protocolClient.close();
 
 const backoffClient = new context.__bridgeTest.OpenRGBClient({
@@ -322,7 +341,7 @@ assert.equal(sockets.length, failedSocketCount, "Update must not create an endle
 assert.equal(
 	removed.filter((id) => id === statusControllerId).length,
 	0,
-	"connection failures must not remove the status controller"
+	"connection failures must not touch a synthetic status controller"
 );
 
 discovery.selectedDevices = [];
@@ -341,7 +360,7 @@ assert.equal(
 	"the service tick must remove stale controllers even when QML cannot see them"
 );
 assert.deepEqual(
-	JSON.parse(discovery.statusController.bridgeDevicesJson),
+	JSON.parse(discovery.deviceCatalogJson),
 	[],
 	"stale controllers must disappear from the independent catalogue"
 );

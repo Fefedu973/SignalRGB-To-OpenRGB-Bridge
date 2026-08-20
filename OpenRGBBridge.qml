@@ -74,6 +74,22 @@ Item {
     // only a compatibility fallback and is never removed/re-added by the service.
     function refreshTransientState() {
         pollRevision++
+        // SignalRGB can cache return values from discovery methods across the QML/JS
+        // bridge. The service setting is an atomic, thread-safe state bus updated by
+        // TCP callbacks without mutating SignalRGB's controller model.
+        try {
+            var persistedState = JSON.parse(String(service.getSetting("General", "UiState") || "{}"))
+            if (Number(persistedState.revision || 0) > 0) {
+                if (String(persistedState.status || "") !== "") {
+                    statusText = String(persistedState.status)
+                }
+                updateDeviceModels(String(persistedState.devicesJson || "[]"))
+                busy = !!persistedState.busy
+                return
+            }
+        } catch (e) {
+        }
+
         try {
             var liveState = JSON.parse(String(discovery.getUiState(pollRevision) || "{}"))
             if (String(liveState.pollToken || "") === String(pollRevision)) {
