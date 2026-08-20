@@ -7,6 +7,7 @@ Item {
     property int activeCount: 0
     property int deletedCount: 0
     property string deviceCatalogJson: ""
+    property int pollRevision: 0
 
     ListModel {
         id: activeDeviceModel
@@ -69,10 +70,23 @@ Item {
         deletedCount = deletedDeviceModel.count
     }
 
-    // The status carrier is the reliable JS→QML channel. It contains both transient
-    // status and an independent device catalogue, including suppressed devices that
-    // may be absent from service.controllers.
+    // Poll a cache-busted, atomic state snapshot. The stable status carrier below is
+    // only a compatibility fallback and is never removed/re-added by the service.
     function refreshTransientState() {
+        pollRevision++
+        try {
+            var liveState = JSON.parse(String(discovery.getUiState(pollRevision) || "{}"))
+            if (String(liveState.pollToken || "") === String(pollRevision)) {
+                if (String(liveState.status || "") !== "") {
+                    statusText = String(liveState.status)
+                }
+                updateDeviceModels(String(liveState.devicesJson || "[]"))
+                busy = !!liveState.busy
+                return
+            }
+        } catch (e) {
+        }
+
         var foundStatus = ""
         var foundDeviceCatalog = ""
         var haveStatusBus = false
