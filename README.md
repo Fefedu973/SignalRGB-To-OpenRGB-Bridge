@@ -1,3 +1,5 @@
+
+
 # SignalRGB To OpenRGB Bridge
 
 SignalRGB To OpenRGB Bridge is a SignalRGB addon that exposes devices supported by [OpenRGB](https://openrgb.org/) as controllable SignalRGB devices.
@@ -143,4 +145,4 @@ npm run validate
 
 Some controllers with a large LED count or large zone/matrix payload can fail to load through SignalRGB's TCP addon transport even though OpenRGB itself still detects them. The addon keeps discovery simple: it reads controllers one by one and skips a controller after a timeout so one problematic device does not block the entire list.
 
-This issue has been solved. If this is still dosen't work, make sure that your SignalRGB install is up to date
+This issue has been solved. If this still doesn't work, make sure that your SignalRGB install is up to date
